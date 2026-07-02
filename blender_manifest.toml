@@ -1,0 +1,24 @@
+schema_version = "1.0.0"
+id = "rruf" 
+version = "2.0.11"
+name = "Reactive Rig UI"
+tagline = "Deployment and utility toolset for the Reactive Rig UI Framework"
+maintainer = "Laurus Kuvakei"
+type = "add-on"
+
+website = "https://github.com/LaurusKuvakei/rruf"
+issues = "https://github.com/LaurusKuvakei/rruf/issues"
+documentation = "https://github.com/LaurusKuvakei/rruf/blob/main/README.md"
+
+copyright = [
+    "2025-2026 Laurus Kuvakei"
+]
+license = [
+    "SPDX:GPL-3.0-or-later"
+]
+
+blender_version_min = "4.2.0"
+tags = ["Animation", "Rigging", "User Interface"]
+
+[permissions]
+files = "Required for exporting and importing UI snapshot JSON files"
