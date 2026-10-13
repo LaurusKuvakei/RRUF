@@ -4,6 +4,7 @@ version = "2.1.0"
 name = "RRUF"
 tagline = "Reactive Rig UI Framework (Toolset)"
 maintainer = "Laurus Kuvakei"
+website = "https://github.com/LaurusKuvakei/RRUF"
 type = "add-on"
 
 copyright = [
