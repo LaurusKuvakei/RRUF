@@ -1,20 +1,17 @@
 schema_version = "1.0.0"
-id = "rruf" 
-version = "2.0.11"
-name = "Reactive Rig UI"
-tagline = "Deployment and utility toolset for the Reactive Rig UI Framework"
+id = "rruf"
+version = "2.1.0"
+name = "RRUF"
+tagline = "Reactive Rig UI Framework (Toolset)"
 maintainer = "Laurus Kuvakei"
 type = "add-on"
-
-website = "https://github.com/LaurusKuvakei/rruf"
-issues = "https://github.com/LaurusKuvakei/rruf/issues"
-documentation = "https://github.com/LaurusKuvakei/rruf/blob/main/README.md"
 
 copyright = [
     "2025-2026 Laurus Kuvakei"
 ]
 license = [
-    "SPDX:GPL-3.0-or-later"
+    "SPDX:GPL-3.0-or-later",
+    "SPDX:CC0-1.0"
 ]
 
 blender_version_min = "4.2.0"
