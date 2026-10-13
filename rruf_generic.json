@@ -68,103 +68,103 @@
             }
         },
         {
-            "name": "{Face_Control}(j)",
-            "parent": "{HEAD}(i)(ic)[USER]",
+            "name": "{Face_Control}(j)(i)",
+            "parent": "{HEAD}(ic)[USER](b)",
             "root_tag": "(DI)",
             "bones": []
         },
         {
-            "name": "{Tongue}",
-            "parent": "{HEAD}(i)(ic)[USER]",
+            "name": "{Tongue}(i)",
+            "parent": "{HEAD}(ic)[USER](b)",
             "root_tag": "(DI)",
             "bones": []
         },
         {
-            "name": "{Face_tweak}(j)",
-            "parent": "{HEAD}(i)(ic)[USER]",
+            "name": "{Face_tweak}(j)(i)",
+            "parent": "{HEAD}(ic)[USER](b)",
             "root_tag": "(DI)",
             "bones": []
         },
         {
-            "name": "{Head Neck}",
-            "parent": "{HEAD}(i)(ic)[USER]",
+            "name": "{Head Neck}(i)",
+            "parent": "{HEAD}(ic)[USER](b)",
             "root_tag": "(DI)",
             "bones": []
         },
         {
             "name": "{Arm_L}(i)(b)(j)",
-            "parent": "{BODY}(i)(ic)[OUTLINER_OB_ARMATURE]",
+            "parent": "{BODY}(ic)[OUTLINER_OB_ARMATURE](b)",
             "root_tag": "(DI)",
             "bones": []
         },
         {
             "name": "{Arm_R}(i)(b)",
-            "parent": "{BODY}(i)(ic)[OUTLINER_OB_ARMATURE]",
+            "parent": "{BODY}(ic)[OUTLINER_OB_ARMATURE](b)",
             "root_tag": "(DI)",
             "bones": []
         },
         {
             "name": "{Leg_L}(i)(b)(j)",
-            "parent": "{BODY}(i)(ic)[OUTLINER_OB_ARMATURE]",
+            "parent": "{BODY}(ic)[OUTLINER_OB_ARMATURE](b)",
             "root_tag": "(DI)",
             "bones": []
         },
         {
             "name": "{Leg_R}(i)(b)",
-            "parent": "{BODY}(i)(ic)[OUTLINER_OB_ARMATURE]",
+            "parent": "{BODY}(ic)[OUTLINER_OB_ARMATURE](b)",
             "root_tag": "(DI)",
             "bones": []
         },
         {
             "name": "{SPINE}(i)(b)",
-            "parent": "{BODY}(i)(ic)[OUTLINER_OB_ARMATURE]",
+            "parent": "{BODY}(ic)[OUTLINER_OB_ARMATURE](b)",
             "root_tag": "(DI)",
             "bones": []
         },
         {
-            "name": "{Arm_L_FK}",
+            "name": "{Arm_L_FK}(i)",
             "parent": "{Arm_L}(i)(b)(j)",
             "root_tag": "(DI)",
             "bones": []
         },
         {
-            "name": "{Arm_L_IK}",
+            "name": "{Arm_L_IK}(i)",
             "parent": "{Arm_L}(i)(b)(j)",
             "root_tag": "(DI)",
             "bones": []
         },
         {
-            "name": "{Arm_R_FK}",
+            "name": "{Arm_R_FK}(i)",
             "parent": "{Arm_R}(i)(b)",
             "root_tag": "(DI)",
             "bones": []
         },
         {
-            "name": "{Arm_R_IK}",
+            "name": "{Arm_R_IK}(i)",
             "parent": "{Arm_R}(i)(b)",
             "root_tag": "(DI)",
             "bones": []
         },
         {
-            "name": "{Leg_L_FK}",
+            "name": "{Leg_L_FK}(i)",
             "parent": "{Leg_L}(i)(b)(j)",
             "root_tag": "(DI)",
             "bones": []
         },
         {
-            "name": "{Leg_L_IK}",
+            "name": "{Leg_L_IK}(i)",
             "parent": "{Leg_L}(i)(b)(j)",
             "root_tag": "(DI)",
             "bones": []
         },
         {
-            "name": "{Leg_R_FK}",
+            "name": "{Leg_R_FK}(i)",
             "parent": "{Leg_R}(i)(b)",
             "root_tag": "(DI)",
             "bones": []
         },
         {
-            "name": "{Leg_R_IK}",
+            "name": "{Leg_R_IK}(i)",
             "parent": "{Leg_R}(i)(b)",
             "root_tag": "(DI)",
             "bones": []
@@ -560,13 +560,13 @@
             "bones": []
         },
         {
-            "name": "{HEAD}(i)(ic)[USER]",
+            "name": "{HEAD}(ic)[USER](b)",
             "parent": "(DI)",
             "root_tag": "(DI)",
             "bones": []
         },
         {
-            "name": "{BODY}(i)(ic)[OUTLINER_OB_ARMATURE]",
+            "name": "{BODY}(ic)[OUTLINER_OB_ARMATURE](b)",
             "parent": "(DI)",
             "root_tag": "(DI)",
             "bones": []
@@ -589,7 +589,7 @@
             "root_tag": "(SE)",
             "bones": [],
             "props": {
-                "{1}IK_SWITCH": {
+                "{1^}IK_SWITCH": {
                     "value": 1.0,
                     "config": {
                         "subtype": "NONE",
@@ -603,7 +603,7 @@
                         "default": 1.0
                     }
                 },
-                "{2}AUTO_SHOULDER": {
+                "{2^}AUTO_SHOULDER": {
                     "value": 1.0,
                     "config": {
                         "subtype": "NONE",
@@ -617,7 +617,7 @@
                         "default": 1.0
                     }
                 },
-                "{3}FREE_IK_POLE": {
+                "{3^}FREE_IK_POLE": {
                     "value": 1.0,
                     "config": {
                         "subtype": "NONE",
@@ -631,7 +631,7 @@
                         "default": 1.0
                     }
                 },
-                "{4}FREE_IK_HAND": {
+                "{4^}FREE_IK_HAND": {
                     "value": 1.0,
                     "config": {
                         "subtype": "NONE",
@@ -653,7 +653,7 @@
             "root_tag": "(SE)",
             "bones": [],
             "props": {
-                "{2}AUTO_SHOULDER": {
+                "{1^}IK_SWITCH": {
                     "value": 1.0,
                     "config": {
                         "subtype": "NONE",
@@ -667,7 +667,7 @@
                         "default": 1.0
                     }
                 },
-                "{3}FREE_IK_POLE": {
+                "{2^}AUTO_SHOULDER": {
                     "value": 1.0,
                     "config": {
                         "subtype": "NONE",
@@ -681,7 +681,7 @@
                         "default": 1.0
                     }
                 },
-                "{4}FREE_IK_HAND": {
+                "{3^}FREE_IK_POLE": {
                     "value": 1.0,
                     "config": {
                         "subtype": "NONE",
@@ -695,7 +695,7 @@
                         "default": 1.0
                     }
                 },
-                "{1}IK_SWITCH": {
+                "{4^}FREE_IK_HAND": {
                     "value": 1.0,
                     "config": {
                         "subtype": "NONE",
@@ -717,7 +717,7 @@
             "root_tag": "(SE)",
             "bones": [],
             "props": {
-                "{1}IK_SWITCH": {
+                "{1^}IK_SWITCH": {
                     "value": 1.0,
                     "config": {
                         "subtype": "NONE",
@@ -731,7 +731,7 @@
                         "default": 1.0
                     }
                 },
-                "{2}FREE_IK_POLE": {
+                "{2^}FREE_IK_POLE": {
                     "value": 1.0,
                     "config": {
                         "subtype": "NONE",
@@ -753,7 +753,7 @@
             "root_tag": "(SE)",
             "bones": [],
             "props": {
-                "{1}IK_SWITCH": {
+                "{1^}IK_SWITCH": {
                     "value": 1.0,
                     "config": {
                         "subtype": "NONE",
@@ -767,7 +767,7 @@
                         "default": 1.0
                     }
                 },
-                "{2}FREE_IK_POLE": {
+                "{2^}FREE_IK_POLE": {
                     "value": 1.0,
                     "config": {
                         "subtype": "NONE",
@@ -789,7 +789,7 @@
             "root_tag": "(SE)",
             "bones": [],
             "props": {
-                "{1}PARENT_TARGET_TO_CHEST": {
+                "{1^}PARENT_TARGET_TO_CHEST": {
                     "value": 1.0,
                     "config": {
                         "subtype": "NONE",
