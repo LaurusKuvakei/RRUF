@@ -18,7 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 bl_info = {
     "name": "RRUF Core",
     "author": "Laurus Kuvakei",
-    "version": (2, 1, 0),
+    "version": (2, 1, 1),
     "blender": (4, 2, 0),
     "location": "3D Viewport > Sidebar (N Panel) > Tool",
     "description": "Reactive Rig UI Framework (Core Engine)",
