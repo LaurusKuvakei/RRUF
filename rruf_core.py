@@ -679,12 +679,13 @@ def _sync_collection_properties(coll_a, coll_b, sync_a_to_b):
         elif hasattr(val, "to_list"): val = val.to_list()
         tgt[k] = val
 
-def _sync_outliner_collections(linked_data_tuples, is_visible):
-    if not linked_data_tuples: return
-    for item_name, is_inverted in linked_data_tuples:
-        item = bpy.data.collections.get(item_name)
-        if not item:
-            continue
+# Read the scene collections from the bone collection's own properties.
+# Looking them up by name would pick the wrong one when a linked library
+# brings a collection with the same name as a local one.
+def _sync_outliner_collections(b_coll, is_visible):
+    for key, item in b_coll.items():
+        if not isinstance(item, bpy.types.Collection): continue
+        is_inverted = '-' in _parse_prop_key(key)[1]
 
         target_hidden = is_visible if is_inverted else (not is_visible)
 
@@ -957,7 +958,7 @@ def _guard_scene_collection(arm, node_map):
     for coll_name, node in node_map.items():
         linked_targets = node.get("linked_outliner_colls", [])
         if linked_targets and (b_coll := get_bone_collection(arm, coll_name)):
-            _sync_outliner_collections(linked_targets, b_coll.is_visible)
+            _sync_outliner_collections(b_coll, b_coll.is_visible)
 
 def _guard_enforcer(arm, old_packet, current_packet):
     node_map = current_packet.get("node_map", {})
@@ -1338,8 +1339,8 @@ class RRUF_OT_vis_toggle(bpy.types.Operator, RRUF_OperatorMixin):
         if c := get_bone_collection(arm, self.collection_name):
             c.is_visible = not c.is_visible
             node = rruf_engine.get_ui_data(arm.session_uid).get("node_map", {}).get(self.collection_name, {})
-            if targets := node.get("linked_outliner_colls", []):
-                _sync_outliner_collections(targets, c.is_visible)
+            if node.get("linked_outliner_colls"):
+                _sync_outliner_collections(c, c.is_visible)
 
         limited_redraw()
         return {'FINISHED'}
@@ -1359,8 +1360,8 @@ class RRUF_OT_vis_show_all(bpy.types.Operator, RRUF_OperatorMixin):
                 if c := get_bone_collection(arm, node_id):
                     if not c.is_visible:
                         c.is_visible = True
-                        if targets := node.get("linked_outliner_colls", []):
-                            _sync_outliner_collections(targets, True)
+                        if node.get("linked_outliner_colls"):
+                            _sync_outliner_collections(c, True)
 
         limited_redraw()
         return {'FINISHED'}
