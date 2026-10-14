@@ -4,7 +4,7 @@ RRUF builds a rig interface from an armature's bone collection names and custom 
 
 Use the main panel to work with a configured rig. Use the Collection Editor to build or adjust its interface.
 
-**Requires Blender 4.2 or newer.**
+**Requires Blender 5.2 or newer.**
 
 - [Download](https://github.com/LaurusKuvakei/RRUF/releases/latest)
 - [Report a problem](https://github.com/LaurusKuvakei/RRUF/issues)
@@ -108,7 +108,7 @@ Avoid relying on Blender's automatic `.001` suffix for UI collections; RRUF trea
 
 The main panel is the animator-facing interface. The category buttons appear according to the roots present in the rig. Hover over an icon to read its tooltip. The **Info** button in the header provides a compact control reference.
 
-In Pose Mode, **Ctrl+Shift+R** opens the RRUF Quick Menu, which presents the same rig interface in a popup.
+In Pose Mode, **Ctrl+Shift+R** opens the RRUF Quick Menu, which presents the same rig interface in a popup. You can change or disable this shortcut in the extension preferences (see [Preferences](#preferences)).
 
 ### Workflow
 
@@ -331,7 +331,7 @@ There are two ways to run it:
 - **Manually:** open Blender's Text Editor, select the `rruf_core.py` text block, and use **Run Script**.
 - **On file load:** allow automatic script execution for a file you trust. The embedded text is registered to run when Blender opens the file.
 
-If the RRUF extension is already active, the embedded core yields to it. Embedding again replaces the existing `rruf_core.py` text block. The embedded copy does not update when the installed extension updates; embed it again when you want the newer core.
+If the RRUF extension is already active, the embedded core yields to it, and enabling the extension takes over from an embedded core that is already running. When several appended models each carry an embedded core, only one runs. Embedding again replaces the existing local `rruf_core.py` text block; the confirmation dialog warns you first, especially if that text is not an RRUF core. A `rruf_core.py` text linked from a library is never modified. While an embedded core is running, it also adds the Quick Menu shortcut. The embedded copy does not update when the installed extension updates; embed it again when you want the newer core.
 
 ## Preferences
 
@@ -340,11 +340,12 @@ If the RRUF extension is already active, the embedded core yields to it. Embeddi
 | **Show Editor** | Shows the setup panel. Off by default. |
 | **Setup Tab** | Chooses where the Collection Editor is placed; shown when Show Editor is enabled. |
 | **Main Tab** | Chooses where the animator-facing panel is placed. |
-| **FPS** | How often RRUF checks for interface changes. Default 4; this is separate from the scene's animation frame rate. |
+| **Polling Rate** | How often (in Hz) RRUF checks the active rig for changes. Default 4; this is separate from the scene's animation frame rate. Called **FPS** before 2.1.2; updating resets it to 4. |
 | **Depth** | Maximum collection nesting processed for the UI. Default 8. Simplify deep layouts or increase this setting if needed. |
-| **Reset to Defaults** | Restores RRUF's extension preferences. |
+| **Shortcut** | Change the Quick Menu key or turn it off. If the shortcut was removed (for example in Blender's Keymap preferences), use **Restore Shortcut**. |
+| **Reset to Defaults** | Restores RRUF's extension preferences, including the Quick Menu shortcut. |
 
-Panel destinations include the **Tool**, **RRUF**, **Animation**, **View**, and **Item** sidebar tabs, or **Properties → Constraints**.
+Panel destinations are the **Tool**, **RRUF**, **Animation**, **View**, and **Item** sidebar tabs. Disabling or uninstalling RRUF removes its shortcut; nothing is left in your keymap preferences.
 
 ## Troubleshooting
 
@@ -365,10 +366,10 @@ Panel destinations include the **Tool**, **RRUF**, **Animation**, **View**, and 
 
 If the interface stops updating after repeated runtime errors, disable and re-enable RRUF and check Blender's console. When reporting a problem, include your Blender and RRUF versions, the steps to reproduce it, and any error text. A small example file is useful when you can share one.
 
-For Blender's own collection tools, see the [Bone Collections documentation](https://docs.blender.org/manual/en/4.2/animation/armatures/properties/bone_collections.html), including assignment and custom properties.
+For Blender's own collection tools, see the [Bone Collections documentation](https://docs.blender.org/manual/en/latest/animation/armatures/properties/bone_collections.html), including assignment and custom properties.
 
 ## License and development
 
 RRUF's Python code and project files are licensed under **GNU GPL version 3 or later**. The included `icon.png` is **CC0**. See `LICENSE.md` and `LICENSE_ASSETS.md`.
 
-RRUF has been under development since October 2025 and has been used in several public projects during that time. It was developed with help from Gemini Pro.
+RRUF has been under development since October 2025 and has been used in several public projects during that time. It was developed with help from LLMs.

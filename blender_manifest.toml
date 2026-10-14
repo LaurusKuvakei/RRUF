@@ -1,6 +1,6 @@
 schema_version = "1.0.0"
 id = "rruf"
-version = "2.1.1"
+version = "2.1.2"
 name = "RRUF"
 tagline = "Reactive Rig UI Framework"
 maintainer = "Laurus Kuvakei"
@@ -15,7 +15,7 @@ license = [
     "SPDX:CC0-1.0"
 ]
 
-blender_version_min = "4.2.0"
+blender_version_min = "5.2.0"
 tags = ["Animation", "Rigging", "User Interface"]
 
 [permissions]

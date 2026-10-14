@@ -1,8 +1,11 @@
+# RRUF - Reactive Rig UI Framework.
+# Copyright (C) 2025-2026 Laurus Kuvakei
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 import bpy
 import os
 import json
 import traceback
-# import ast
 import re
 from bpy_extras.io_utils import ExportHelper, ImportHelper
 from . import rruf_core
@@ -38,12 +41,11 @@ _TOOLTIPS = {
 _PROP_FLAG_ORDER = ("x", "^", "-")
 
 PANEL_CONFIGS = {
-    'RRUF':        {'space': 'VIEW_3D',  'region': 'UI',     'context': '',           'cat': 'RRUF'},
-    'Animation':   {'space': 'VIEW_3D',  'region': 'UI',     'context': '',           'cat': 'Animation'},
-    'View':        {'space': 'VIEW_3D',  'region': 'UI',     'context': '',           'cat': 'View'},
-    'Tool':        {'space': 'VIEW_3D',  'region': 'UI',     'context': '',           'cat': 'Tool'},
-    'Item':        {'space': 'VIEW_3D',  'region': 'UI',     'context': '',           'cat': 'Item'},
-    'Constraints': {'space': 'PROPERTIES','region': 'WINDOW', 'context': 'constraint', 'cat': ''},
+    'RRUF':      {'space': 'VIEW_3D', 'region': 'UI', 'context': '', 'cat': 'RRUF'},
+    'Animation': {'space': 'VIEW_3D', 'region': 'UI', 'context': '', 'cat': 'Animation'},
+    'View':      {'space': 'VIEW_3D', 'region': 'UI', 'context': '', 'cat': 'View'},
+    'Tool':      {'space': 'VIEW_3D', 'region': 'UI', 'context': '', 'cat': 'Tool'},
+    'Item':      {'space': 'VIEW_3D', 'region': 'UI', 'context': '', 'cat': 'Item'},
 }
 
 TAB_ITEMS = (
@@ -52,7 +54,6 @@ TAB_ITEMS = (
     ('View', "View", "Standard View"),
     ('Tool', "Tool", "Standard Tool"),
     ('Item', "Item", "Standard Item"),
-    ('Constraints', "Properties: Constraints", "Object Constraints"),
 )
 
 
@@ -101,7 +102,7 @@ def _format_parameter_tag(tag, str_val, bool_val, icon_val):
     return full_tag
 
 def sync_ui_props_to_collection(props, coll):
-    parsed = rruf_core.rruf_engine.parse_collection_syntax(coll.name)
+    parsed = rruf_core.rruf_engine.parse_collection_syntax(coll.name, is_editor_preview=True)
 
     is_master = rruf_core._get_root_context(coll.name) is not None
 
@@ -145,6 +146,9 @@ def _prop_path_pattern(coll_name, key):
     lit = lambda t: re.escape(bpy.utils.escape_identifier(t))
     return re.compile(r'(collections(?:_all)?\[(["\'])' + lit(coll_name) + r'\2\]\[)(["\'])' + lit(key) + r'\3\]')
 
+# Driver references to this armature can live on other IDs in the same file,
+# including embedded node trees. Visit each animated ID once; later filtering
+# limits edits to paths and targets belonging to the selected armature.
 def _iter_animated_ids():
     seen = set()
     for attr in dir(bpy.data):
@@ -158,6 +162,9 @@ def _iter_animated_ids():
                 seen.add(candidate.as_pointer())
                 if getattr(candidate, "animation_data", None): yield candidate
 
+# Support layered/slotted actions as well as the legacy fcurves API.
+# When a slot is supplied, inspect its channel bag only so other armatures
+# using different slots in the same action retain their animation paths.
 def _iter_action_fcurves(action, slot=None):
     layers = getattr(action, "layers", None)
     if layers:
@@ -172,6 +179,10 @@ def _iter_action_fcurves(action, slot=None):
     elif getattr(action, "fcurves", None) is not None:
         yield from action.fcurves
 
+# A property rename changes its RNA path. Repair exact collection/key matches
+# in drivers targeting this armature and in its active/NLA action curves.
+# Read-only paths are counted as skipped. This does not rewrite expressions,
+# unused actions, or references stored in other .blend files.
 def _fix_prop_paths(armature, coll_name, old_key, new_key):
     pattern = _prop_path_pattern(coll_name, old_key)
     new_lit = bpy.utils.escape_identifier(new_key)
@@ -201,6 +212,8 @@ def _fix_prop_paths(armature, coll_name, old_key, new_key):
 
     anim = armature.animation_data
     if anim:
+        # Carry each action's armature slot through to curve iteration rather
+        # than rewriting all slots of a shared action.
         sources = [(anim.action, getattr(anim, "action_slot", None))]
         sources += [(st.action, getattr(st, "action_slot", None)) for tr in anim.nla_tracks for st in tr.strips]
         seen = set()
@@ -215,6 +228,9 @@ def _fix_prop_paths(armature, coll_name, old_key, new_key):
                     except Exception: skipped += 1
     return drivers, curves, skipped
 
+# Blender custom-property keys are replaced rather than renamed in place.
+# Preserve the value, UI metadata, and library-overridable flag before removing
+# the old key, then repair supported driver and animation references.
 def _rename_prop(armature, coll, old_key, new_key):
     val = coll[old_key]
     if hasattr(val, "to_dict"): val = val.to_dict()
@@ -248,7 +264,7 @@ def _get_valid_tags(data, active_coll, current_tags):
         else:
             break
 
-    parsed = rruf_core.rruf_engine.parse_collection_syntax(current_tags, context_root)
+    parsed = rruf_core.rruf_engine.parse_collection_syntax(current_tags, context_root, is_editor_preview=True)
     existing = {f for f, cfg in rruf_core.TAG_CONFIG.items() if parsed.get(cfg["node_key"])}
     valid = []
 
@@ -346,31 +362,46 @@ def _validate_snapshot(snapshot_data):
     tree = snapshot_data["tree"]
     if not isinstance(tree, list):
         return "'tree' must be a list."
+    if not tree:
+        return "Snapshot 'tree' is empty."
+    valid_root_tags = {f"({k})" for k, v in rruf_core.TAG_CONFIG.items() if "root_context" in v}
+    has_categorized_node = False
     for i, node in enumerate(tree):
         if not isinstance(node, dict):
             return f"Entry {i} is not an object."
-        if node.get("name") in (None, ""):
-            return f"Entry {i} has no 'name'."
+        name = node.get("name")
+        if not isinstance(name, str) or not name or "\x00" in name or len(name.encode("utf-8")) > 63:
+            return f"Entry {i} has an invalid 'name' (must be 1-63 UTF-8 bytes without null characters)."
+        parent = node.get("parent")
+        if parent is not None and (not isinstance(parent, str) or not parent or "\x00" in parent):
+            return f"'{name}': 'parent' must be null or a non-empty string."
+        root_tag = node.get("root_tag")
+        if root_tag is not None:
+            if not isinstance(root_tag, str) or root_tag not in valid_root_tags:
+                return f"'{name}': unknown 'root_tag' '{root_tag}'."
+            has_categorized_node = True
         if "bones" in node:
             if not isinstance(node["bones"], list):
-                return f"'{node['name']}': 'bones' must be a list."
+                return f"'{name}': 'bones' must be a list."
             for bone_index, bone_name in enumerate(node["bones"]):
                 if not isinstance(bone_name, str) or not bone_name or "\x00" in bone_name:
-                    return (f"'{node['name']}': bone entry {bone_index} must be "
+                    return (f"'{name}': bone entry {bone_index} must be "
                             "a non-empty name without null characters.")
         if "props" in node:
             if not isinstance(node["props"], dict):
-                return f"'{node['name']}': 'props' must be an object."
+                return f"'{name}': 'props' must be an object."
             for key, entry in node["props"].items():
                 if not key or len(key.encode("utf-8")) > 63:
-                    return f"'{node['name']}': property key '{key[:20]}' must be 1-63 bytes."
+                    return f"'{name}': property key '{key[:20]}' must be 1-63 bytes."
                 if not isinstance(entry, dict):
-                    return f"'{node['name']}': property '{key}' must be an object."
+                    return f"'{name}': property '{key}' must be an object."
+    if not has_categorized_node:
+        return "Snapshot contains no valid RRUF category collections."
     return None
 
-def _deserialize_armature_structure(armature, snapshot_data, props):
-    # Keep direct callers safe as well as the import operator: validate the
-    # complete snapshot before rebuild can remove any existing collections.
+def _deserialize_armature_structure(armature, snapshot_data, props, context=None):
+    # Apply the same snapshot shape, root-tag, and key checks for direct callers
+    # and operators before Rebuild removes collections.
     if _validate_snapshot(snapshot_data) is not None:
         return False
 
@@ -386,6 +417,9 @@ def _deserialize_armature_structure(armature, snapshot_data, props):
     total_wipe_requested = len(active_targets) == 4 and props.use_rebuild
 
     if total_wipe_requested:
+        # Selecting every category with Rebuild enabled is an intentional full
+        # replacement: remove all bone collections, including non-RRUF branches.
+        # The import dialog and user guide disclose this destructive scope.
         to_remove = list(armature.collections_all)
         for c in reversed(to_remove):
             try: armature.collections.remove(c)
@@ -401,10 +435,14 @@ def _deserialize_armature_structure(armature, snapshot_data, props):
             try: armature.collections.remove(c)
             except Exception: pass
 
-    bpy.context.view_layer.update()
+    bl_ctx = context or bpy.context
+    bl_ctx.view_layer.update()
     skipped_props = 0
 
     created_map = {c.name: c for c in armature.collections_all}
+    # Short and long root aliases identify the same category. Reuse an existing
+    # category root rather than creating a duplicate, and map imported children
+    # to it even when the snapshot uses the other spelling.
     existing_roots = {rruf_core._get_root_context(c.name): c for c in armature.collections
                       if rruf_core._get_root_context(c.name)}
     for tag in active_targets:
@@ -429,7 +467,7 @@ def _deserialize_armature_structure(armature, snapshot_data, props):
             c = armature.collections.new(name=nm)
             created_map[nm] = c
 
-    bpy.context.view_layer.update()
+    bl_ctx.view_layer.update()
 
     for node in snapshot_data["tree"]:
         nm = str(node["name"])
@@ -566,6 +604,11 @@ class RRUF_OT_convert_syntax(_RRUF_ArmaturePoll, bpy.types.Operator):
                     self.report({'WARNING'}, f"Skipping '{coll.name}': Inflated name exceeds 63 byte limit.")
                     skipped_collections += 1
                     continue
+                clash = arm.collections_all.get(new_name)
+                if clash is not None and clash != coll:
+                    self.report({'WARNING'}, f"Skipping '{coll.name}': '{new_name}' already exists.")
+                    skipped_collections += 1
+                    continue
 
                 coll.name = new_name
                 changes_made += 1
@@ -595,6 +638,7 @@ class RRUF_OT_reorder_tag(bpy.types.Operator):
         chunks = [m.group(0) for m in rruf_core._TAG_TUPLE_PATTERN.finditer(props.tag_buffer)]
         if not chunks: return {'CANCELLED'}
         idx = self.index
+        if not 0 <= idx < len(chunks): return {'CANCELLED'}
         if self.direction == 'UP' and idx > 0:
             chunks[idx], chunks[idx-1] = chunks[idx-1], chunks[idx]
         elif self.direction == 'DOWN' and idx < len(chunks) - 1:
@@ -675,7 +719,7 @@ class RRUF_OT_editor_action(_RRUF_ArmaturePoll, bpy.types.Operator):
                 depth, walker = 0, coll
                 while walker.parent: depth += 1; walker = walker.parent
                 tree_ctx = rruf_core._get_root_context(walker.name) if depth else None
-                check = rruf_core.rruf_engine.parse_collection_syntax(final_name, tree_ctx, depth)
+                check = rruf_core.rruf_engine.parse_collection_syntax(final_name, tree_ctx, depth, is_editor_preview=True)
                 if not check["is_valid"]:
                     self.report({'WARNING'}, check["error_msg"] or "Invalid name.")
                     return {'CANCELLED'}
@@ -695,6 +739,9 @@ class RRUF_OT_editor_action(_RRUF_ArmaturePoll, bpy.types.Operator):
 
                 rruf_core.rruf_engine.purge_all()
                 props.last_target_name = coll.name
+                # This operator also handles temporary composer actions that
+                # should not create undo steps. Push undo only when COMMIT
+                # applies the composed name to the actual bone collection.
                 bpy.ops.ed.undo_push(message="RRUF Commit")
 
                 self.report({'INFO'}, f"Updated collection: {old_name} -> {final_name}")
@@ -890,6 +937,8 @@ class RRUF_OT_paste_props(_RRUF_ArmaturePoll, bpy.types.Operator):
         if not coll or not scene_props.clipboard_data: return {'CANCELLED'}
         try:
             _deserialize_collection_properties(coll, json.loads(scene_props.clipboard_data))
+            rruf_core.rruf_engine.purge_all()
+            rruf_core.limited_redraw()
             return {'FINISHED'}
         except Exception as e:
             self.report({'WARNING'}, f"Paste failed: {e}")
@@ -978,7 +1027,7 @@ class RRUF_OT_import_snapshot(_RRUF_ArmaturePoll, bpy.types.Operator, ImportHelp
         props = context.scene.rruf_editor
         try:
             with open(self.filepath, 'r', encoding='utf-8') as f: snapshot = json.load(f)
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, RecursionError) as e:
             self.report({'WARNING'}, f"Could not read snapshot: {e}")
             return {'CANCELLED'}
 
@@ -986,7 +1035,7 @@ class RRUF_OT_import_snapshot(_RRUF_ArmaturePoll, bpy.types.Operator, ImportHelp
             self.report({'WARNING'}, f"Invalid snapshot, nothing was changed: {err}")
             return {'CANCELLED'}
 
-        result = _deserialize_armature_structure(context.active_object.data, snapshot, props)
+        result = _deserialize_armature_structure(context.active_object.data, snapshot, props, context=context)
         if result is False:
             return {'CANCELLED'}
         rruf_core.rruf_engine.purge_all()
@@ -995,10 +1044,15 @@ class RRUF_OT_import_snapshot(_RRUF_ArmaturePoll, bpy.types.Operator, ImportHelp
             self.report({'WARNING'}, f"Imported. {result} propert{'y' if result == 1 else 'ies'} could not be restored (see console).")
         return {'FINISHED'}
 
+def _local_core_text():
+    # Only a local text can be replaced; a linked one belongs to its library.
+    return next((t for t in bpy.data.texts if t.name == "rruf_core.py" and t.library is None), None)
+
 class RRUF_OT_embed_core(bpy.types.Operator):
     bl_idname = "rruf.embed_core"
     bl_label = "Embed Core"
     bl_description = "Embed the rruf_core.py engine into this blend file"
+    bl_options = {'UNDO'}
 
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self, width=380)
@@ -1010,8 +1064,18 @@ class RRUF_OT_embed_core(bpy.types.Operator):
         col.label(text="Embedding Core Engine", icon='INFO')
         col.alert = False
         col.separator()
-        col.label(text="This will package 'rruf_core.py' into the current .blend file.")
-        # col.label(text="All developer comments and empty lines will be stripped.")
+        col.label(text="This will package 'rruf_core.py' into the current .blend file")
+        col.label(text="and register it to run automatically on file load.")
+        old = _local_core_text()
+        if old:
+            col.separator()
+            col.alert = True
+            if "RRUF_GLOBAL_LOCK" in old.as_string():
+                col.label(text="The existing 'rruf_core.py' text will be replaced.", icon='ERROR')
+            else:
+                col.label(text="A text named 'rruf_core.py' exists and is not an RRUF core.", icon='ERROR')
+                col.label(text="It will be replaced. Rename it first to keep it.")
+            col.alert = False
         col.separator()
         col.label(text="Are you sure you want to proceed?", icon='QUESTION')
 
@@ -1021,25 +1085,25 @@ class RRUF_OT_embed_core(bpy.types.Operator):
             with open(src_core, 'r', encoding='utf-8') as f:
                 raw_code = f.read()
 
-            # parsed_tree = ast.parse(raw_code)
-            # clean_code = ast.unparse(parsed_tree)
-            clean_code = raw_code
-
             name_core = "rruf_core.py"
-            if name_core in bpy.data.texts:
-                bpy.data.texts.remove(bpy.data.texts[name_core])
+            old = _local_core_text()
+            if old: bpy.data.texts.remove(old)
 
             txt_core = bpy.data.texts.new(name_core)
-            txt_core.write(clean_code)
+            txt_core.write(raw_code)
             txt_core.use_module = True
 
         except Exception as e:
             self.report({'ERROR'}, f"Failed to embed rruf_core.py: {e}")
             return {'CANCELLED'}
 
-        self.report({'INFO'}, "RRUF Core embedded and cleaned successfully.")
+        self.report({'INFO'}, "RRUF Core embedded successfully.")
         return {'FINISHED'}
 
+# Keep references to dynamic enum strings after the callback returns.
+# Blender's EnumProperty documentation warns that releasing these strings
+# can cause incorrect behavior or crashes.
+# Retain the current items here while refreshing the preset list.
 _PRESET_ITEMS = []
 
 def _get_json_presets_callback(self, context):
@@ -1159,7 +1223,7 @@ class RRUF_PT_Setup(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        return context.object and context.object.type == 'ARMATURE' and context.object.data.get(rruf_core.RRUF_TRIGGER_KEY)
+        return bool(context.object and context.object.type == 'ARMATURE' and context.object.data and context.object.data.get(rruf_core.RRUF_TRIGGER_KEY))
 
     def draw(self, context):
         layout = self.layout
@@ -1174,7 +1238,7 @@ class RRUF_PT_Setup(bpy.types.Panel):
             box = layout.box()
             box.label(text="Collection Composer:", icon='OUTLINER_COLLECTION')
 
-            parsed = rruf_core.rruf_engine.parse_collection_syntax(props.tag_buffer)
+            parsed = rruf_core.rruf_engine.parse_collection_syntax(props.tag_buffer, is_editor_preview=True)
             is_master = any(parsed.get(cfg["node_key"]) for cfg in rruf_core.TAG_CONFIG.values() if "root_context" in cfg)
 
             if not is_master:
