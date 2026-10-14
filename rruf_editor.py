@@ -1115,6 +1115,7 @@ def _get_json_presets_callback(self, context):
 class RRUF_OT_load_internal_preset(_RRUF_ArmaturePoll, bpy.types.Operator):
     bl_idname = "rruf.load_internal_preset"
     bl_label = "Confirm Preset Load?"
+    bl_options = {'UNDO'}
 
     def invoke(self, context, event):
         if context.window_manager.rruf_preset_list == 'NONE':

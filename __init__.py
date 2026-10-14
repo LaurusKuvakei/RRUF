@@ -23,7 +23,7 @@ _MAX_PREVIEW_CACHE_SIZE = 500
 
 
 # Keep rruf_core.py usable as a standalone script embedded in a .blend.
-# The installed extension adds editor synchronization, debug polling, and
+# The installed extension adds editor synchronization and
 # preview-cache separation by wrapping this package's own core functions.
 # This keeps extension-specific behavior out of the standalone core.
 #
@@ -50,25 +50,6 @@ def _restore_patches():
         else:
             setattr(owner, attr, raw)
     _ORIGINALS.clear()
-
-# Debug mode relaxes the Pose Mode requirement only. Keep the armature and
-# RRUF marker checks because drawing still expects configured rig data.
-def _patch_core_poll():
-    def build(original_poll):
-        @classmethod
-        def rruf_debug_poll(cls, context):
-            try:
-                prefs = context.preferences.addons[__package__].preferences
-                if prefs.pref_debug_mode:
-                    obj = context.object
-                    return bool(obj and obj.type == 'ARMATURE' and obj.data
-                                and obj.data.get(rruf_core.RRUF_TRIGGER_KEY))
-            except Exception:
-                pass
-            return original_poll(context)
-        return rruf_debug_poll
-
-    _install_patch(rruf_core.RRUF_PT_Main, "poll", build)
 
 # Editor previews may parse names that are never committed to the rig.
 # Keep those results in a separate bounded cache so they do not evict
@@ -222,11 +203,6 @@ class RRUF_PT_Setup_Main(bpy.types.Panel):
 class RRUF_UR_Preferences(bpy.types.AddonPreferences):
     bl_idname = __package__
 
-    pref_debug_mode: bpy.props.BoolProperty(
-        name="Debug Mode",
-        description="Show UI outside of Pose Mode (requires rig data)",
-        default=False
-    )
     pref_show_setup_panel: bpy.props.BoolProperty(
         name="Show Editor",
         description="Show the Collection Editor used to build the rig UI",
@@ -400,7 +376,6 @@ def register():
 
 def _register_body():
     _patch_main_loop()
-    _patch_core_poll()
     _patch_syntax_cache_separation()
 
     bpy.utils.register_class(RRUF_UR_Preferences)
