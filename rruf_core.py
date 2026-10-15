@@ -1015,7 +1015,7 @@ def _rruf_killswitch_engage(dummy):
         if hasattr(bpy.types.WindowManager, "rruf_show_workflow"): del bpy.types.WindowManager.rruf_show_workflow
         bpy.app.driver_namespace.pop(RRUF_GLOBAL_LOCK, None)
         _rruf_killswitch_defuser()
-        print("RRUF: Embedded core unregistered.")
+        # print("RRUF: Embedded core unregistered.")  # debug
 
 # Remove RRUF shutdown handlers, walking backward so removals do not skip
 # entries. Name matching also finds handlers from older embedded copies.
@@ -1030,7 +1030,7 @@ def _rruf_killswitch_defuser():
             if func == _rruf_killswitch_engage or getattr(func, "__name__", "") == "_rruf_killswitch_engage":
                 h_list.pop(i)
                 defused = True
-    if defused: print("RRUF: Killswitch defused.")
+    # if defused: print("RRUF: Killswitch defused.")  # debug
     rruf_engine.purge_all()
 
 
@@ -2233,11 +2233,11 @@ if __name__ == "__main__":
 
     if candidates:
         is_global_active = True
-        print(f"RRUF Core: Global version detected ({candidates[0]}). Embedded engine yielding")
+        # print(f"RRUF Core: Global version detected ({candidates[0]}). Embedded engine yielding")  # debug
 
     if not is_global_active:
         if RRUF_GLOBAL_LOCK in bpy.app.driver_namespace:
-            print("RRUF: Global lock detected. Embedded instance yielding.")
+            pass  # print("RRUF: Global lock detected. Embedded instance yielding.")  # debug
         else:
             try:
                 _rruf_dismiss_other_instances()
@@ -2249,24 +2249,24 @@ if __name__ == "__main__":
                 register()
             except Exception as e:
                 print(f"RRUF Core: Embedded registration failed ({e}). Nothing was left registered.")
-            else:
-                print("RRUF Core: Active (Embedded Mode)")
-            print("""
-                   ####                 
-                 ########               
-               ####    ###              
-             #####      ####            
-           #####    ##   ####           
-          ### ##  #####    ###          
-        #### ### #####      ###         
-       ### ####  #####   ### ####       
-      ###  ###    ###   ##### ####      
-      ####               #### ####      
-      ############   #############      
-         #######       ########         
-                ##   ##                 
-                #     ##                
-              ###    ####               
-             ##       ####              
-             #############              
-              ###########                """)
+            # else:  # debug
+            #     print("RRUF Core: Active (Embedded Mode)")
+            # print("""
+#                   ####                 
+#                 ########               
+#               ####    ###              
+#             #####      ####            
+#           #####    ##   ####           
+#          ### ##  #####    ###          
+#        #### ### #####      ###         
+#       ### ####  #####   ### ####       
+#      ###  ###    ###   ##### ####      
+#      ####               #### ####      
+#      ############   #############      
+#         #######       ########         
+#                ##   ##                 
+#                #     ##                
+#              ###    ####               
+#             ##       ####              
+#             #############              
+#              ###########                """)
