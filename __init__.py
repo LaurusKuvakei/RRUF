@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import bpy
-import os
 import importlib
+from importlib.resources import files as _pkg_files
 import traceback
 from collections import OrderedDict
 import bpy.utils.previews
@@ -167,7 +167,7 @@ def _update_engine_constants(self, context):
 
 
 class RRUF_PT_Setup_Main(bpy.types.Panel):
-    """The Master Parent Panel for all Developer Tools"""
+    """Parent panel for the RRUF editor tools."""
     bl_idname = "RRUF_PT_Setup_Main"
     bl_label = "Reactive Rig UI Framework"
     bl_space_type = 'VIEW_3D'
@@ -397,8 +397,8 @@ def _register_body():
 
     pcoll = bpy.utils.previews.new()
     _PREVIEW_COLLECTIONS["main"] = pcoll
-    lp = os.path.join(os.path.dirname(__file__), "icon.png")
-    if os.path.exists(lp): pcoll.load("rruf_logo", lp, 'IMAGE')
+    lp = _pkg_files(__package__) / "icon.png"
+    if lp.is_file(): pcoll.load("rruf_logo", str(lp), 'IMAGE')
     rruf_editor.preview_collections = _PREVIEW_COLLECTIONS
 
 def unregister():

@@ -33,11 +33,11 @@ By default, RRUF has two locations in the 3D Viewport sidebar. Press **N** to op
 | Location | Purpose | When it appears |
 | --- | --- | --- |
 | **Tool → Reactive Rig UI** | Visibility, properties, snapping, and workflow tools | In Pose Mode, with an RRUF-enabled armature selected |
-| **RRUF → Reactive Rig UI Framework → Collection Editor** | Building and editing the interface | With an armature selected and **Show Editor** enabled in RRUF's preferences |
+| **RRUF → Reactive Rig UI Framework → Collection Editor** | Building and editing the interface | With an RRUF-enabled armature selected and **Show Editor** enabled in RRUF's preferences (otherwise the panel offers **Enable RRUF for this armature**) |
 
 To show the editor, find RRUF in **Preferences → Add-ons**, expand its settings, and enable **Show Editor**. It is off by default so an animator can use the rig without seeing the setup tools.
 
-You can change both panel locations in the extension preferences.
+You can change both panel locations in the extension preferences. With **Main Tab** set to **Tool**, the main panel also appears in the Properties editor's **Tool** tab.
 
 ## Quick start
 
@@ -108,7 +108,7 @@ Avoid relying on Blender's automatic `.001` suffix for UI collections; RRUF trea
 
 The main panel is the animator-facing interface. The category buttons appear according to the roots present in the rig. Hover over an icon to read its tooltip. The **Info** button in the header provides a compact control reference.
 
-In Pose Mode, **Ctrl+Shift+R** opens the RRUF Quick Menu, which presents the same rig interface in a popup. You can change or disable this shortcut in the extension preferences (see [Preferences](#preferences)).
+In Pose Mode, **Ctrl+Shift+R** opens the RRUF Quick Menu, which presents the same rig interface in a popup. You can change or disable this shortcut in the extension preferences (see [Preferences](#preferences)). Keyframes cannot be inserted from the Quick Menu popup (a Blender limitation); use the sidebar panel to key properties.
 
 ### Workflow
 
@@ -364,7 +364,7 @@ Panel destinations are the **Tool**, **RRUF**, **Animation**, **View**, and **It
 | A preset or snapshot does not assign bones | The destination armature must already contain bones with matching names. |
 | Embedded UI does not start | Run its text block manually, or allow automatic execution for the trusted file. Check whether the installed extension is already providing the UI. |
 
-If the interface stops updating after repeated runtime errors, disable and re-enable RRUF and check Blender's console. When reporting a problem, include your Blender and RRUF versions, the steps to reproduce it, and any error text. A small example file is useful when you can share one.
+If the interface stops updating after repeated runtime errors, disable and re-enable RRUF (for an embedded core, reload the file or run its text block again) and check Blender's console. When reporting a problem, include your Blender and RRUF versions, the steps to reproduce it, and any error text. A small example file is useful when you can share one.
 
 For Blender's own collection tools, see the [Bone Collections documentation](https://docs.blender.org/manual/en/latest/animation/armatures/properties/bone_collections.html), including assignment and custom properties.
 

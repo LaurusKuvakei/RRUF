@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import bpy
-import os
 import json
+from importlib.resources import files as _pkg_files
 import traceback
 import re
 from bpy_extras.io_utils import ExportHelper, ImportHelper
@@ -12,9 +12,6 @@ from . import rruf_core
 preview_collections = {}
 
 _NAME_WITH_DISCRIMINATOR_PATTERN = re.compile(r'\{([^}]+)\}(?:\[([^\]]+)\])?')
-
-# Reactive Rig UI Framework (Editor Module)
-# Copyright (C) 2025-2026 Laurus Kuvakei
 
 
 _TOOLTIPS = {
@@ -125,7 +122,7 @@ def sync_ui_props_to_collection(props, coll):
     props.last_target_name = coll.name
 
 def _sorted_prop_keys(coll):
-    keys = [k for k in coll.keys() if k != "_RNA_UI"]
+    keys = list(coll.keys())
     return sorted(keys, key=lambda k: rruf_core._prop_sort_key(rruf_core._parse_prop_key(k)))
 
 def _build_prop_key(order, flags, name):
@@ -162,22 +159,18 @@ def _iter_animated_ids():
                 seen.add(candidate.as_pointer())
                 if getattr(candidate, "animation_data", None): yield candidate
 
-# Support layered/slotted actions as well as the legacy fcurves API.
+# Iterate the curves of a layered/slotted action.
 # When a slot is supplied, inspect its channel bag only so other armatures
 # using different slots in the same action retain their animation paths.
 def _iter_action_fcurves(action, slot=None):
-    layers = getattr(action, "layers", None)
-    if layers:
-        for layer in layers:
-            for strip in layer.strips:
-                if slot is not None:
-                    bag = strip.channelbag(slot)
-                    if bag: yield from bag.fcurves
-                else:
-                    for bag in getattr(strip, "channelbags", ()):
-                        yield from bag.fcurves
-    elif getattr(action, "fcurves", None) is not None:
-        yield from action.fcurves
+    for layer in action.layers:
+        for strip in layer.strips:
+            if slot is not None:
+                bag = strip.channelbag(slot)
+                if bag: yield from bag.fcurves
+            else:
+                for bag in getattr(strip, "channelbags", ()):
+                    yield from bag.fcurves
 
 # A property rename changes its RNA path. Repair exact collection/key matches
 # in drivers targeting this armature and in its active/NLA action curves.
@@ -296,7 +289,6 @@ def _serialize_collection_properties(coll):
         return data
 
     for key in coll.keys():
-        if key == "_RNA_UI": continue
         val = coll[key]
         if isinstance(val, bpy.types.Collection):
             prop_storage[key] = {"value": None, "collection": val.name}
@@ -1080,10 +1072,8 @@ class RRUF_OT_embed_core(bpy.types.Operator):
         col.label(text="Are you sure you want to proceed?", icon='QUESTION')
 
     def execute(self, context):
-        src_core = os.path.join(os.path.dirname(__file__), "rruf_core.py")
         try:
-            with open(src_core, 'r', encoding='utf-8') as f:
-                raw_code = f.read()
+            raw_code = (_pkg_files(__package__) / "rruf_core.py").read_text(encoding='utf-8')
 
             name_core = "rruf_core.py"
             old = _local_core_text()
@@ -1107,8 +1097,7 @@ class RRUF_OT_embed_core(bpy.types.Operator):
 _PRESET_ITEMS = []
 
 def _get_json_presets_callback(self, context):
-    path = os.path.dirname(__file__)
-    files = [f for f in sorted(os.listdir(path)) if f.lower().endswith(".json")]
+    files = sorted(p.name for p in _pkg_files(__package__).iterdir() if p.is_file() and p.name.lower().endswith(".json"))
     _PRESET_ITEMS[:] = [(f, f, f"Load {f}") for f in files] or [('NONE', "No Presets", "")]
     return _PRESET_ITEMS
 
@@ -1157,7 +1146,7 @@ class RRUF_OT_load_internal_preset(_RRUF_ArmaturePoll, bpy.types.Operator):
     def execute(self, context):
         wm = context.window_manager
         if wm.rruf_preset_list != 'NONE':
-            fp = os.path.join(os.path.dirname(__file__), wm.rruf_preset_list)
+            fp = str(_pkg_files(__package__) / wm.rruf_preset_list)
             return bpy.ops.rruf.import_snapshot(filepath=fp)
         return {'CANCELLED'}
 

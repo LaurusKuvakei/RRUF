@@ -209,12 +209,6 @@ RRUF_MANUAL_DATA = [
 ]
 
 
-_DEFAULT_RRUF_DATA = {
-    "node_map": {}, "vis_display": [], "snap_groups": {}, "snap_layout": [],
-    "props_others": [], "has_links": False, "found_settings": False,
-    "root_collection_names": [], "mch_cwi": True
-}
-
 class RRUF_Core_Engine:
     def __init__(self):
         self.data = {}
@@ -300,7 +294,6 @@ class RRUF_Core_Engine:
             parsed_props = {}
 
             for k in b_coll.keys():
-                if k == "_RNA_UI": continue
                 parsed = _parse_prop_key(k)
                 if 'x' in parsed[1]: continue
                 parsed_props[k] = parsed
@@ -496,7 +489,7 @@ class RRUF_Core_Engine:
         fast_st = tuple((c.name, c.is_visible, c.is_solo, c.parent) for c in arm.collections_all)
 
         # Refresh property keys, linked collection names, and bone assignments
-        # roughly once per second at the default refresh rate.
+        # about once per second at any Polling Rate.
         # Property values are read directly by Blender's UI controls, so moving
         # a slider does not require rebuilding the interface.
         if self.tick_count % max(1, int(POLLING_RATE_HZ)) == 0 or arm_key not in self.k_cache:
@@ -543,12 +536,8 @@ def get_bone_collection(armature, collection_name):
     if not armature or not collection_name: return None
     return armature.collections_all.get(collection_name)
 
-if bpy.app.version >= (5, 0, 0):
-    def _select_bone(arm_obj, data_bone):
-        if pb := arm_obj.pose.bones.get(data_bone.name): pb.select = True
-else:
-    def _select_bone(arm_obj, data_bone):
-        data_bone.select = True
+def _select_bone(arm_obj, data_bone):
+    if pb := arm_obj.pose.bones.get(data_bone.name): pb.select = True
 
 def _get_composed_matrix(source_matrix, target_matrix, snap_mode):
     loc_s, rot_s, scl_s = source_matrix.decompose()
@@ -608,7 +597,6 @@ def _autokey_pose_bones(context, pose_bones, snap_mode):
         if snap_mode[2]: paths.append("scale")
         for path in paths:
             try: pb.keyframe_insert(path, group=pb.name, options=options)
-            except TypeError: pb.keyframe_insert(path, group=pb.name)
             except RuntimeError: pass
 
 # Pair selection is independent of hierarchy, but transform application is not.
@@ -647,7 +635,7 @@ def limited_redraw():
         return
 
     try:
-        wm = getattr(bpy.context, "window_manager", None) or (bpy.data.window_managers[0] if bpy.data.window_managers else None)
+        wm = bpy.context.window_manager
         if not wm or not hasattr(wm, "windows"):
             return
 
@@ -672,7 +660,7 @@ def _get_rotation_data_path(rotation_mode):
 def _sync_collection_properties(coll_a, coll_b, sync_a_to_b):
     src, tgt = (coll_a, coll_b) if sync_a_to_b else (coll_b, coll_a)
     for k in src.keys():
-        if k == "_RNA_UI" or k not in tgt or isinstance(src[k], bpy.types.Collection): continue
+        if k not in tgt or isinstance(src[k], bpy.types.Collection): continue
         if 'x' in _parse_prop_key(k)[1]: continue
         val = src[k]
         if hasattr(val, "to_dict"): val = val.to_dict()
@@ -1488,7 +1476,7 @@ class RRUF_OT_reset(bpy.types.Operator, RRUF_OperatorMixin):
         for t_name in targets:
             if c := get_bone_collection(arm, t_name):
                 for k in c.keys():
-                    if k != "_RNA_UI" and 'x' not in _parse_prop_key(k)[1]:
+                    if 'x' not in _parse_prop_key(k)[1]:
                         try:
                             if (default_val := c.id_properties_ui(k).as_dict().get("default")) is not None:
                                 cur_val = c[k]
@@ -2147,9 +2135,9 @@ def _remove_popup_keymap():
             km.keymap_items.remove(k)
 
 # The installed RRUF extension takes priority over an already-running
-# embedded RRUF core. Ask that core to shut down before registering ours,
+# embedded RRUF core. Ask that core to shut down before registering this one,
 # so its timer, classes, properties, handler, and lock are cleaned up.
-# Removing its handler alone previously left its persistent timer running.
+# Removing only its handler would leave its persistent timer running.
 # Match by function name because embedded copies have distinct function
 # objects and may come from an older RRUF version.
 def _rruf_dismiss_other_instances():
