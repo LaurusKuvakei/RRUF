@@ -26,7 +26,7 @@ Use the main panel to work with a configured rig. Use the Collection Editor to b
 
 ## Installation and panel locations
 
-Install RRUF from Blender Extensions, or download the release ZIP from this repository. To install a ZIP, open **Edit → Preferences → Get Extensions**, use the menu in the upper-right corner, and choose **Install from Disk**. Select the ZIP and enable the extension.
+Install RRUF from Blender Extensions (If it gets approved :v), or download the release ZIP from this repository. To install a ZIP, open **Edit → Preferences → Get Extensions**, use the menu in the upper-right corner, and choose **Install from Disk**. Select the ZIP and enable the extension.
 
 By default, RRUF has two locations in the 3D Viewport sidebar. Press **N** to open the sidebar.
 
