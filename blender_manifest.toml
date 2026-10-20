@@ -1,6 +1,6 @@
 schema_version = "1.0.0"
 id = "rruf"
-version = "2.1.2"
+version = "2.1.3"
 name = "RRUF"
 tagline = "Reactive Rig UI Framework"
 maintainer = "Laurus Kuvakei"

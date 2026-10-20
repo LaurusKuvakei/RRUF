@@ -1080,7 +1080,7 @@ class RRUF_OT_embed_core(bpy.types.Operator):
             if old: bpy.data.texts.remove(old)
 
             txt_core = bpy.data.texts.new(name_core)
-            txt_core.write(raw_code)
+            txt_core.write(raw_code.rstrip() + "\n\n_rruf_embedded_boot()\n")
             txt_core.use_module = True
 
         except Exception as e:

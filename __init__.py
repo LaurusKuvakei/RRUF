@@ -433,5 +433,3 @@ def unregister():
     if errors:
         raise errors[0]
 
-if __name__ == "__main__":
-    register()

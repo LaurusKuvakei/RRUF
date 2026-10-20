@@ -530,7 +530,7 @@ def _get_valid_icons():
     except (AttributeError, KeyError, TypeError):
         return set()
 
-IS_ADDON = __name__ != "__main__"
+IS_ADDON = bool(__package__)
 
 def get_bone_collection(armature, collection_name):
     if not armature or not collection_name: return None
@@ -2214,7 +2214,7 @@ def unregister():
     if hasattr(bpy.types.WindowManager, "rruf_active_tab"): del bpy.types.WindowManager.rruf_active_tab
     if hasattr(bpy.types.WindowManager, "rruf_show_workflow"): del bpy.types.WindowManager.rruf_show_workflow
 
-if __name__ == "__main__":
+def _rruf_embedded_boot():
     # Embedded cores run only when no installed RRUF is enabled and no core
     # holds the global lock. Yielding registers nothing and schedules no retry.
     # If the extension is later disabled, reload the file or run this script
@@ -2222,36 +2222,26 @@ if __name__ == "__main__":
     # Enabled add-ons and extensions are listed in the preferences, which
     # survive file loads; no add-on directory rescan is needed. The lock alone
     # is not enough: Blender clears driver_namespace before running this text.
-    import bpy
-
-    is_global_active = False
+    # The Embed operator appends the call to this function to the text.
     try:
         candidates = [m for m in bpy.context.preferences.addons.keys() if m.split('.')[-1] in ("rruf", "rruf_core")]
     except Exception as e:
         print(f"RRUF Core: Add-on check failed ({e}). Relying on the global lock.")
         candidates = []
-
-    if candidates:
-        is_global_active = True
-        # print(f"RRUF Core: Global version detected ({candidates[0]}). Embedded engine yielding")  # debug
-
-    if not is_global_active:
-        if RRUF_GLOBAL_LOCK in bpy.app.driver_namespace:
-            pass  # print("RRUF: Global lock detected. Embedded instance yielding.")  # debug
-        else:
-            try:
-                _rruf_dismiss_other_instances()
-                _rruf_killswitch_defuser()
-                unregister()
-            except Exception: pass
-
-            try:
-                register()
-            except Exception as e:
-                print(f"RRUF Core: Embedded registration failed ({e}). Nothing was left registered.")
-            # else:  # debug
-            #     print("RRUF Core: Active (Embedded Mode)")
-            # print("""
+    if candidates: return  # print(f"RRUF Core: Global version detected ({candidates[0]}). Embedded engine yielding")  # debug
+    if RRUF_GLOBAL_LOCK in bpy.app.driver_namespace: return  # print("RRUF: Global lock detected. Embedded instance yielding.")  # debug
+    try:
+        _rruf_dismiss_other_instances()
+        _rruf_killswitch_defuser()
+        unregister()
+    except Exception: pass
+    try:
+        register()
+    except Exception as e:
+        print(f"RRUF Core: Embedded registration failed ({e}). Nothing was left registered.")
+    # else:  # debug
+    #     print("RRUF Core: Active (Embedded Mode)")
+    # print("""
 #                   ####                 
 #                 ########               
 #               ####    ###              
