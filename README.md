@@ -20,7 +20,6 @@ Use the main panel to work with a configured rig. Use the Collection Editor to b
 - [Setting up snapping](#setting-up-snapping)
 - [Collection Editor](#collection-editor)
 - [Presets and snapshots](#presets-and-snapshots)
-- [Embedding the core](#embedding-the-core)
 - [Preferences](#preferences)
 - [Troubleshooting](#troubleshooting)
 
@@ -37,7 +36,7 @@ By default, RRUF has two locations in the 3D Viewport sidebar. Press **N** to op
 
 To show the editor, find RRUF in **Preferences → Add-ons**, expand its settings, and enable **Show Editor**. It is off by default so an animator can use the rig without seeing the setup tools.
 
-You can change both panel locations in the extension preferences. With **Main Tab** set to **Tool**, the main panel also appears in the Properties editor's **Tool** tab.
+The main panel also appears in the Properties editor's **Tool** tab.
 
 ## Quick start
 
@@ -320,38 +319,23 @@ With **Rebuild on**, RRUF removes collections in the selected categories before 
 
 RRUF checks the snapshot before rebuilding. If values cannot be restored, it reports the skipped properties. Scene-collection references also need a matching collection name in the destination file; unresolved references are skipped.
 
-## Embedding the core
-
-**Engine Injection → Embed Core into .Blend** copies RRUF's core into a text block named `rruf_core.py` in the current file. Save the `.blend` afterward.
-
-The embedded core provides the animator-facing interface on a computer where the extension is not installed. The Collection Editor is part of the extension and is not included in that embedded core.
-
-There are two ways to run it:
-
-- **Manually:** open Blender's Text Editor, select the `rruf_core.py` text block, and use **Run Script**.
-- **On file load:** allow automatic script execution for a file you trust. The embedded text is registered to run when Blender opens the file.
-
-If the RRUF extension is already active, the embedded core yields to it, and enabling the extension takes over from an embedded core that is already running. When several appended models each carry an embedded core, only one runs. Embedding again replaces the existing local `rruf_core.py` text block; the confirmation dialog warns you first, especially if that text is not an RRUF core. A `rruf_core.py` text linked from a library is never modified. While an embedded core is running, it also adds the Quick Menu shortcut. The embedded copy does not update when the installed extension updates; embed it again when you want the newer core.
-
 ## Preferences
 
 | Setting | Use |
 | --- | --- |
 | **Show Editor** | Shows the setup panel. Off by default. |
-| **Setup Tab** | Chooses where the Collection Editor is placed; shown when Show Editor is enabled. |
-| **Main Tab** | Chooses where the animator-facing panel is placed. |
-| **Polling Rate** | How often (in Hz) RRUF checks the active rig for changes. Default 4; this is separate from the scene's animation frame rate. Called **FPS** before 2.1.2; updating resets it to 4. |
+| **Polling Rate** | How often (in Hz) RRUF checks the active rig for changes. Default 4, range 2–8; this is separate from the scene's animation frame rate. Called **FPS** before 2.1.2; updating resets it to 4. |
 | **Depth** | Maximum collection nesting processed for the UI. Default 8. Simplify deep layouts or increase this setting if needed. |
 | **Shortcut** | Change the Quick Menu key or turn it off. If the shortcut was removed (for example in Blender's Keymap preferences), use **Restore Shortcut**. |
 | **Reset to Defaults** | Restores RRUF's extension preferences, including the Quick Menu shortcut. |
 
-Panel destinations are the **Tool**, **RRUF**, **Animation**, **View**, and **Item** sidebar tabs. Disabling or uninstalling RRUF removes its shortcut; nothing is left in your keymap preferences.
+Disabling or uninstalling RRUF removes its shortcut; nothing is left in your keymap preferences.
 
 ## Troubleshooting
 
 | What you see | What to check |
 | --- | --- |
-| No main panel | Select an RRUF-enabled armature, enter Pose Mode, and check the configured Main Tab. |
+| No main panel | Select an RRUF-enabled armature, enter Pose Mode, and open the sidebar's **Tool** tab. |
 | No editor | Enable Show Editor in the extension preferences and select an armature. |
 | **ACCESS DENIED** | Add a top-level `(IN)` or `(INTERNALS)` collection. It may be empty. |
 | **NO UI CONFIGURED** | Add `(DI)`, `(SE)`, or `(SN)` at the top level, with UI collections beneath it. |
@@ -362,9 +346,9 @@ Panel destinations are the **Tool**, **RRUF**, **Animation**, **View**, and **It
 | Property symmetry misses a control | Ensure both partners are adjacent in the displayed layout and have the same full property key, including prefixes. |
 | Snapping moves the wrong bone | Check sibling order, `(t)` placement, assignments, and alphabetical pairing when there are multiple bones. |
 | A preset or snapshot does not assign bones | The destination armature must already contain bones with matching names. |
-| Embedded UI does not start | Run its text block manually, or allow automatic execution for the trusted file. Check whether the installed extension is already providing the UI. |
+| A file has a `rruf_core.py` text block | It was embedded by RRUF 2.1.x. Since 2.2.0 the extension provides the UI and the old embedded core stays idle while it is enabled. You can delete the text block and save the file. |
 
-If the interface stops updating after repeated runtime errors, disable and re-enable RRUF (for an embedded core, reload the file or run its text block again) and check Blender's console. When reporting a problem, include your Blender and RRUF versions, the steps to reproduce it, and any error text. A small example file is useful when you can share one.
+If the interface stops updating after repeated runtime errors, reload the file or disable and re-enable RRUF, and check Blender's console. When reporting a problem, include your Blender and RRUF versions, the steps to reproduce it, and any error text. A small example file is useful when you can share one.
 
 For Blender's own collection tools, see the [Bone Collections documentation](https://docs.blender.org/manual/en/latest/animation/armatures/properties/bone_collections.html), including assignment and custom properties.
 

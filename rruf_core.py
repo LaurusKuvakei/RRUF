@@ -27,25 +27,14 @@ RRUFNodeData = namedtuple('RRUFNodeData', ['node', 'coll', 'label', 'is_valid', 
 
 
 RRUF_TRIGGER_KEY = "RRUF_KEY"
-# Presence flag in driver_namespace (value is always True, not an owner).
-# "King of the hill": while any RRUF core is active, every other start yields,
-# including a re-run of the same embedded core. Protects animators who append
-# several rigs, each carrying its own embedded copy. The extension always
-# takes priority over embedded cores.
-RRUF_GLOBAL_LOCK = "RRUF_GLOBAL_LOCK"
-MAX_UI_NESTING = 8
+_DEFAULT_MAX_NESTING = 8
 _MAX_SYNTAX_CACHE_SIZE = 2000
-POLLING_RATE_HZ = 4.0
+_MAX_PREVIEW_CACHE_SIZE = 500
+_DEFAULT_POLLING_RATE = 4.0
 POPUP_WIDTH = 450
 POPUP_KEYBIND = {"type": 'R', "value": 'PRESS', "ctrl": True, "shift": True, "alt": False}
 
-UI_LOCATION_INDEX = 0
-_UI_LOCS = [
-    ('VIEW_3D',   'UI',     'Tool',      ''),
-    ('VIEW_3D',   'UI',     'Animation', ''),
-    ('VIEW_3D',   'UI',     'RRUF',   ''),
-]
-UI_SPACE_TYPE, UI_REGION_TYPE, UI_CATEGORY, UI_CONTEXT = _UI_LOCS[UI_LOCATION_INDEX]
+UI_SPACE_TYPE, UI_REGION_TYPE, UI_CATEGORY, UI_CONTEXT = 'VIEW_3D', 'UI', 'Tool', ''
 
 _DYNAMIC_PARAM = "__DYNAMIC__"
 
@@ -209,6 +198,21 @@ RRUF_MANUAL_DATA = [
 ]
 
 
+# Engine settings are read from the add-on preferences where they are used.
+# Defaults apply while the preferences are unavailable (during registration).
+def _prefs():
+    try: return bpy.context.preferences.addons[__package__].preferences
+    except (AttributeError, KeyError): return None
+
+def _max_nesting():
+    p = _prefs()
+    return p.pref_max_nesting if p else _DEFAULT_MAX_NESTING
+
+def _polling_rate():
+    p = _prefs()
+    return p.pref_polling_rate if p else _DEFAULT_POLLING_RATE
+
+
 class RRUF_Core_Engine:
     def __init__(self):
         self.data = {}
@@ -219,6 +223,9 @@ class RRUF_Core_Engine:
         self.err_count = 0
         self.k_cache = {}
         self.syntax_cache = OrderedDict()
+        # Editor previews may parse names that are never committed to the rig.
+        # They use a separate bounded cache so they do not evict engine entries.
+        self.preview_syntax_cache = OrderedDict()
 
     def get_ui_data(self, session_uid):
         if session_uid in self.data:
@@ -259,6 +266,7 @@ class RRUF_Core_Engine:
         self.gatekeeper.clear()
         self.search.clear()
         self.syntax_cache.clear()
+        self.preview_syntax_cache.clear()
         self.k_cache.clear()
 
     def scan_hierarchy(self, armature, old_packet=None):
@@ -270,6 +278,7 @@ class RRUF_Core_Engine:
         traversal_order = []
         stack = []
         mch_cwi = False
+        max_nesting = _max_nesting()
 
         for c in reversed(armature.collections):
             if c.parent is None:
@@ -344,7 +353,7 @@ class RRUF_Core_Engine:
 
             if any(tag in raw_name for tag in _SKIP_TAGS): continue
 
-            if depth < MAX_UI_NESTING:
+            if depth < max_nesting:
                 for child in rev_children:
                     stack.append((child, raw_name, depth + 1, node["tree_type"]))
             elif len(rev_children) > 0:
@@ -363,8 +372,19 @@ class RRUF_Core_Engine:
             "mch_cwi": mch_cwi
         }
 
-    def parse_collection_syntax(self, raw_name, tree_ctx=None, depth=0):
+    def parse_collection_syntax(self, raw_name, tree_ctx=None, depth=0, is_editor_preview=False):
         cache_key = (raw_name, tree_ctx, depth)
+        if is_editor_preview and cache_key not in self.syntax_cache:
+            preview_cache = self.preview_syntax_cache
+            if cache_key in preview_cache:
+                preview_cache.move_to_end(cache_key)
+                return preview_cache[cache_key]
+            result = self.parse_collection_syntax(raw_name, tree_ctx, depth)
+            self.syntax_cache.pop(cache_key, None)
+            preview_cache[cache_key] = result
+            if len(preview_cache) > _MAX_PREVIEW_CACHE_SIZE:
+                preview_cache.popitem(last=False)
+            return result
         if cache_key in self.syntax_cache:
             self.syntax_cache.move_to_end(cache_key)
             return self.syntax_cache[cache_key]
@@ -465,13 +485,14 @@ class RRUF_Core_Engine:
     # layout preparation happen here when the tracked state changes.
     def tick(self, context):
         self.tick_count += 1
+        rate = _polling_rate()
 
         # Periodically discard cached data for armatures that no longer exist.
         # Parser entries use names rather than armature IDs and have a separate
         # cache size limit.
         # Intervals here are counted in ticks, not seconds: while no RRUF rig
         # is active the timer polls more slowly, so they take longer in real time.
-        if self.tick_count % max(1, int(POLLING_RATE_HZ * 10)) == 0:
+        if self.tick_count % max(1, int(rate * 10)) == 0:
             live_uids = {a.session_uid for a in bpy.data.armatures}
             self.garbage_collect(live_uids)
 
@@ -492,7 +513,7 @@ class RRUF_Core_Engine:
         # about once per second at any Polling Rate.
         # Property values are read directly by Blender's UI controls, so moving
         # a slider does not require rebuilding the interface.
-        if self.tick_count % max(1, int(POLLING_RATE_HZ)) == 0 or arm_key not in self.k_cache:
+        if self.tick_count % max(1, int(rate)) == 0 or arm_key not in self.k_cache:
             self.k_cache[arm_key] = tuple(
                 (tuple((k, v.name) if isinstance(v, bpy.types.Collection) else k for k, v in c.items()),
                  tuple(c.bones.keys()))
@@ -529,8 +550,6 @@ def _get_valid_icons():
         return set(items.keys())
     except (AttributeError, KeyError, TypeError):
         return set()
-
-IS_ADDON = bool(__package__)
 
 def get_bone_collection(armature, collection_name):
     if not armature or not collection_name: return None
@@ -968,14 +987,26 @@ def _guard_enforcer(arm, old_packet, current_packet):
 
 _IDLE_INTERVAL = 0.5
 
+# Editor errors are reported but do not count toward stopping the timer.
+def _sync_editor(ctx):
+    if not ctx: return False
+    try:
+        from . import rruf_editor
+        return rruf_editor.sync_active_collection(ctx)
+    except Exception:
+        traceback.print_exc()
+        return False
+
 # Keep one polling timer for this core instance. The configured rate is
 # independent of the scene frame rate. Returning None stops this timer.
 def rruf_main_loop_timer():
     try:
         ctx = getattr(bpy, "context", None)
-        if rruf_engine.tick(ctx):
+        redraw = rruf_engine.tick(ctx)
+        if _sync_editor(ctx): redraw = True
+        if redraw:
             limited_redraw()
-        interval = 1.0 / POLLING_RATE_HZ
+        interval = 1.0 / _polling_rate()
         # Poll less often while no RRUF armature is active. tick() already
         # returns early in that case; this only reduces idle wake-ups.
         obj = getattr(ctx, "active_object", None) if ctx else None
@@ -987,52 +1018,21 @@ def rruf_main_loop_timer():
         rruf_engine.err_count += 1
         # Stop after repeated failures to avoid an endless stream of tracebacks.
         # A completed active-armature update resets the error counter.
-        # In extension mode the killswitch clears caches but leaves registration
-        # intact; disable and re-enable RRUF to restart the timer.
+        # Loading a file restarts the timer.
         if rruf_engine.err_count > 5:
             print("RRUF: Too many consecutive errors. Stopping the update timer.")
-            _rruf_killswitch_engage(None)
+            rruf_engine.purge_all()
             return None
-        return 1.0 / POLLING_RATE_HZ
+        return 1.0 / _polling_rate()
 
+# Cached rig data belongs to the previous file. The timer is persistent and
+# survives file loads; this only restarts it if it stopped after errors.
 @persistent
-def _rruf_killswitch_engage(dummy):
-    # Clear cached rig data before loading another file.
-    # An embedded core belongs to the current file, so it also stops its timer
-    # and removes its registrations. The installed extension remains active
-    # across file loads and only needs its caches cleared.
-    # This handler also serves as the shutdown entry point during takeover.
+def _rruf_on_load_post(_dummy):
     rruf_engine.purge_all()
-    if not IS_ADDON:
-        _remove_popup_keymap()
-        if bpy.app.timers.is_registered(rruf_main_loop_timer):
-            bpy.app.timers.unregister(rruf_main_loop_timer)
-        for c in reversed(_CLASSES):
-            try: bpy.utils.unregister_class(c)
-            except Exception: pass
-        if hasattr(bpy.types.Armature, "rruf"): del bpy.types.Armature.rruf
-        if hasattr(bpy.types.WindowManager, "rruf_active_tab"): del bpy.types.WindowManager.rruf_active_tab
-        if hasattr(bpy.types.WindowManager, "rruf_show_workflow"): del bpy.types.WindowManager.rruf_show_workflow
-        bpy.app.driver_namespace.pop(RRUF_GLOBAL_LOCK, None)
-        _rruf_killswitch_defuser()
-        # print("RRUF: Embedded core unregistered.")  # debug
-
-# Remove RRUF shutdown handlers, walking backward so removals do not skip
-# entries. Name matching also finds handlers from older embedded copies.
-# This only removes handlers and clears this engine's caches; it does not
-# stop another instance's timer or unregister its classes.
-# During takeover, dismiss other instances before calling this function.
-def _rruf_killswitch_defuser():
-    defused = False
-    for h_list in (bpy.app.handlers.load_pre, bpy.app.handlers.load_post):
-        for i in range(len(h_list) - 1, -1, -1):
-            func = h_list[i]
-            if func == _rruf_killswitch_engage or getattr(func, "__name__", "") == "_rruf_killswitch_engage":
-                h_list.pop(i)
-                defused = True
-    # if defused: print("RRUF: Killswitch defused.")  # debug
-    rruf_engine.purge_all()
-
+    rruf_engine.err_count = 0
+    if not bpy.app.timers.is_registered(rruf_main_loop_timer):
+        bpy.app.timers.register(rruf_main_loop_timer, first_interval=0.25, persistent=True)
 
 class RRUF_OperatorMixin:
     _metadata_key = ""
@@ -1884,7 +1884,7 @@ def _draw_children_grid(container_layout, node, armature, ui_data, draw_func, **
     if node.get("overflow", False): _draw_overflow_error(container_layout)
 
 def _draw_vis_recursive(layout, armature, node_id, ui_data, depth=0):
-    if depth > MAX_UI_NESTING: return
+    if depth > _max_nesting(): return
     node = ui_data.get("node_map", {}).get(node_id)
     if not node: return
 
@@ -2134,36 +2134,7 @@ def _remove_popup_keymap():
         for k in [item for item in km.keymap_items if item.idname == RRUF_OT_popup_ui.bl_idname]:
             km.keymap_items.remove(k)
 
-# The installed RRUF extension takes priority over an already-running
-# embedded RRUF core. Ask that core to shut down before registering this one,
-# so its timer, classes, properties, handler, and lock are cleaned up.
-# Removing only its handler would leave its persistent timer running.
-# Match by function name because embedded copies have distinct function
-# objects and may come from an older RRUF version.
-def _rruf_dismiss_other_instances():
-    for h_list in (bpy.app.handlers.load_pre, bpy.app.handlers.load_post):
-        for func in list(h_list):
-            if func is not _rruf_killswitch_engage and getattr(func, "__name__", "") == "_rruf_killswitch_engage":
-                try: func(None)
-                except Exception: pass
-
-# Roll back registration if startup fails partway through, particularly
-# the global lock that would otherwise block later embedded cores.
 def register():
-    try:
-        _register_body()
-    except Exception:
-        try: unregister()
-        except Exception: pass
-        raise
-
-def _register_body():
-    _rruf_dismiss_other_instances()
-    _rruf_killswitch_defuser()
-    # Mark this core active so embedded copies yield instead of starting
-    # another engine. This is a shared presence flag, not an ownership token.
-    bpy.app.driver_namespace[RRUF_GLOBAL_LOCK] = True
-
     bpy.types.WindowManager.rruf_active_tab = bpy.props.EnumProperty(
         name="Menu Tab",
         items=[
@@ -2185,63 +2156,30 @@ def _register_body():
     wm = bpy.context.window_manager
     kc = getattr(wm, "keyconfigs", None)
     if kc and kc.addon:
-        _remove_popup_keymap()
         km = kc.addon.keymaps.get('Pose')
         if not km: km = kc.addon.keymaps.new(name='Pose', space_type='EMPTY')
         km.keymap_items.new(RRUF_OT_popup_ui.bl_idname, **POPUP_KEYBIND)
 
-    if not bpy.app.timers.is_registered(rruf_main_loop_timer):
-        bpy.app.timers.register(rruf_main_loop_timer, first_interval=0.25, persistent=True)
-
-    if _rruf_killswitch_engage not in bpy.app.handlers.load_pre:
-        bpy.app.handlers.load_pre.append(_rruf_killswitch_engage)
+    bpy.app.timers.register(rruf_main_loop_timer, first_interval=0.25, persistent=True)
+    bpy.app.handlers.load_post.append(_rruf_on_load_post)
 
 def unregister():
-    _rruf_killswitch_defuser()
+    if _rruf_on_load_post in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.remove(_rruf_on_load_post)
     _remove_popup_keymap()
-
-    if RRUF_GLOBAL_LOCK in bpy.app.driver_namespace:
-        del bpy.app.driver_namespace[RRUF_GLOBAL_LOCK]
 
     if bpy.app.timers.is_registered(rruf_main_loop_timer):
         bpy.app.timers.unregister(rruf_main_loop_timer)
 
     for c in reversed(_CLASSES):
-        try: bpy.utils.unregister_class(c)
-        except Exception: pass
+        if c.is_registered:
+            bpy.utils.unregister_class(c)
 
     if hasattr(bpy.types.Armature, "rruf"): del bpy.types.Armature.rruf
     if hasattr(bpy.types.WindowManager, "rruf_active_tab"): del bpy.types.WindowManager.rruf_active_tab
     if hasattr(bpy.types.WindowManager, "rruf_show_workflow"): del bpy.types.WindowManager.rruf_show_workflow
 
-def _rruf_embedded_boot():
-    # Embedded cores run only when no installed RRUF is enabled and no core
-    # holds the global lock. Yielding registers nothing and schedules no retry.
-    # If the extension is later disabled, reload the file or run this script
-    # again to start the embedded core.
-    # Enabled add-ons and extensions are listed in the preferences, which
-    # survive file loads; no add-on directory rescan is needed. The lock alone
-    # is not enough: Blender clears driver_namespace before running this text.
-    # The Embed operator appends the call to this function to the text.
-    try:
-        candidates = [m for m in bpy.context.preferences.addons.keys() if m.split('.')[-1] in ("rruf", "rruf_core")]
-    except Exception as e:
-        print(f"RRUF Core: Add-on check failed ({e}). Relying on the global lock.")
-        candidates = []
-    if candidates: return  # print(f"RRUF Core: Global version detected ({candidates[0]}). Embedded engine yielding")  # debug
-    if RRUF_GLOBAL_LOCK in bpy.app.driver_namespace: return  # print("RRUF: Global lock detected. Embedded instance yielding.")  # debug
-    try:
-        _rruf_dismiss_other_instances()
-        _rruf_killswitch_defuser()
-        unregister()
-    except Exception: pass
-    try:
-        register()
-    except Exception as e:
-        print(f"RRUF Core: Embedded registration failed ({e}). Nothing was left registered.")
-    # else:  # debug
-    #     print("RRUF Core: Active (Embedded Mode)")
-    # print("""
+
 #                   ####                 
 #                 ########               
 #               ####    ###              
@@ -2259,4 +2197,4 @@ def _rruf_embedded_boot():
 #              ###    ####               
 #             ##       ####              
 #             #############              
-#              ###########                """)
+#              ###########

@@ -3,167 +3,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import bpy
-import importlib
 from importlib.resources import files as _pkg_files
-import traceback
-from collections import OrderedDict
 import bpy.utils.previews
 
 
-# On reload these names already exist from the previous import.
-if "rruf_core" in locals():
-    importlib.reload(rruf_core)  # noqa: F821
-    importlib.reload(rruf_editor)  # noqa: F821
-else:
-    from . import rruf_core
-    from . import rruf_editor
+from . import rruf_core
+from . import rruf_editor
 
 _PREVIEW_COLLECTIONS = {}
-_MAX_PREVIEW_CACHE_SIZE = 500
-
-
-# Keep rruf_core.py usable as a standalone script embedded in a .blend.
-# The installed extension adds editor synchronization and
-# preview-cache separation by wrapping this package's own core functions.
-# This keeps extension-specific behavior out of the standalone core.
-#
-# Patches are applied once and originals are retained for restoration.
-# Only RRUF's own module and classes are patched; Blender internals and
-# other add-ons are not modified here.
-# Restore patches after core cleanup so timer removal uses the function
-# object that was actually registered.
-_ORIGINALS = {}
-_MISSING = object()
-
-def _install_patch(owner, attr, build_replacement):
-    key = (owner, attr)
-    if key in _ORIGINALS:
-        return
-    _ORIGINALS[key] = vars(owner).get(attr, _MISSING)
-    setattr(owner, attr, build_replacement(getattr(owner, attr)))
-
-def _restore_patches():
-    for (owner, attr), raw in _ORIGINALS.items():
-        if raw is _MISSING:
-            try: delattr(owner, attr)
-            except AttributeError: pass
-        else:
-            setattr(owner, attr, raw)
-    _ORIGINALS.clear()
-
-# Editor previews may parse names that are never committed to the rig.
-# Keep those results in a separate bounded cache so they do not evict
-# useful engine entries. The preview flag identifies editor queries
-# without adding an editor dependency to the standalone core.
-def _patch_syntax_cache_separation():
-    engine = rruf_core.rruf_engine
-    if not isinstance(getattr(engine, "preview_syntax_cache", None), OrderedDict):
-        engine.preview_syntax_cache = OrderedDict()
-
-    def build_parse(original_parse):
-        def patched_parse(self, raw_name, tree_ctx=None, depth=0, is_editor_preview=False):
-            if not is_editor_preview:
-                return original_parse(self, raw_name, tree_ctx, depth)
-
-            cache_key = (raw_name, tree_ctx, depth)
-            preview_cache = self.preview_syntax_cache
-            if cache_key in preview_cache:
-                preview_cache.move_to_end(cache_key)
-                return preview_cache[cache_key]
-
-            was_already_engine_cached = cache_key in self.syntax_cache
-            result = original_parse(self, raw_name, tree_ctx, depth)
-
-            if not was_already_engine_cached:
-                self.syntax_cache.pop(cache_key, None)
-                preview_cache[cache_key] = result
-                if len(preview_cache) > _MAX_PREVIEW_CACHE_SIZE:
-                    preview_cache.popitem(last=False)
-
-            return result
-        return patched_parse
-
-    def build_purge(original_purge):
-        def patched_purge(self):
-            original_purge(self)
-            cache = getattr(self, "preview_syntax_cache", None)
-            if cache is not None:
-                cache.clear()
-        return patched_purge
-
-    _install_patch(rruf_core.RRUF_Core_Engine, "parse_collection_syntax", build_parse)
-    _install_patch(rruf_core.RRUF_Core_Engine, "purge_all", build_purge)
-
-# Extend the installed core's timer with editor synchronization while
-# keeping the standalone embedded core independent of the editor.
-# Synchronization runs only when Show Editor is enabled and the active
-# collection differs from the last collection loaded into the composer.
-def _patch_main_loop():
-    def build(original_loop):
-        def rruf_unified_main_loop():
-            interval = original_loop()
-
-            try:
-                prefs = bpy.context.preferences.addons[__package__].preferences
-                if prefs.pref_show_setup_panel:
-                    obj = bpy.context.active_object
-                    if obj and obj.type == 'ARMATURE' and obj.data.get(rruf_core.RRUF_TRIGGER_KEY):
-                        coll = rruf_editor.get_active_bone_collection(obj.data)
-                        props = bpy.context.scene.rruf_editor
-
-                        if coll and props.last_target_name != coll.name:
-                            rruf_editor.sync_ui_props_to_collection(props, coll)
-                            rruf_core.limited_redraw()
-            except Exception:
-                pass
-
-            return interval
-        return rruf_unified_main_loop
-
-    _install_patch(rruf_core, "rruf_main_loop_timer", build)
-
-
-def _apply_panel_config(cls, tab_key):
-    cfg = rruf_editor.PANEL_CONFIGS.get(tab_key, rruf_editor.PANEL_CONFIGS['Animation'])
-    cls.bl_space_type = cfg['space']
-    cls.bl_region_type = cfg['region']
-    cls.bl_category = cfg['cat']
-    cls.bl_context = cfg['context']
-
-def _configure_panel_classes(prefs):
-    _apply_panel_config(rruf_core.RRUF_PT_Main, prefs.pref_category_name)
-    for p in (RRUF_PT_Setup_Main, rruf_editor.RRUF_PT_Setup):
-        _apply_panel_config(p, prefs.pref_setup_category_name)
-
-def _update_panel_locations(self, context):
-    core_panels = [
-        rruf_core.RRUF_PT_Main
-    ]
-
-    setup_panels = [
-        RRUF_PT_Setup_Main,
-        rruf_editor.RRUF_PT_Setup
-    ]
-
-    for p in core_panels + setup_panels:
-        try: bpy.utils.unregister_class(p)
-        except Exception: pass
-
-    _configure_panel_classes(self)
-
-    for p in reversed(core_panels):
-        try: bpy.utils.register_class(p)
-        except Exception: pass
-
-    for p in setup_panels:
-        try: bpy.utils.register_class(p)
-        except Exception: pass
-
-    rruf_core.limited_redraw()
-
-def _update_engine_constants(self, context):
-    rruf_core.MAX_UI_NESTING = self.pref_max_nesting
-    rruf_core.POLLING_RATE_HZ = self.pref_polling_rate
 
 
 class RRUF_PT_Setup_Main(bpy.types.Panel):
@@ -176,12 +23,8 @@ class RRUF_PT_Setup_Main(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        try:
-            pref = context.preferences.addons[__package__].preferences
-            if not pref.pref_show_setup_panel:
-                return False
-        except Exception:
-            pass
+        if not context.preferences.addons[__package__].preferences.pref_show_setup_panel:
+            return False
         return bool(context.object and context.object.type == 'ARMATURE' and context.object.data)
 
     def draw(self, context):
@@ -208,28 +51,19 @@ class RRUF_UR_Preferences(bpy.types.AddonPreferences):
         description="Show the Collection Editor used to build the rig UI",
         default=False
     )
-    pref_setup_category_name: bpy.props.EnumProperty(
-        name="Setup Tab", items=rruf_editor.TAB_ITEMS, default="RRUF", update=_update_panel_locations
-    )
-    pref_category_name: bpy.props.EnumProperty(
-        name="Main Tab", items=rruf_editor.TAB_ITEMS, default="Tool", update=_update_panel_locations
-    )
     pref_polling_rate: bpy.props.FloatProperty(
         name="Polling Rate",
         description="How many times per second (Hz) RRUF checks the active rig for changes. "
                     "Higher values react faster but use more CPU",
-        default=4.0, min=0.5, max=16.0, update=_update_engine_constants
+        default=4.0, min=2.0, max=8.0
     )
-    pref_max_nesting: bpy.props.IntProperty(name="Depth", default=8, min=1, max=16, update=_update_engine_constants)
+    pref_max_nesting: bpy.props.IntProperty(name="Depth", default=8, min=1, max=16)
 
     def draw(self, context):
         layout = self.layout
         col = layout.column(align=True)
         col.prop(self, "pref_show_setup_panel", toggle=True, icon='TOOL_SETTINGS')
-        if self.pref_show_setup_panel:
-            col.prop(self, "pref_setup_category_name")
         col.separator()
-        col.prop(self, "pref_category_name")
         col.prop(self, "pref_polling_rate")
         col.prop(self, "pref_max_nesting")
 
@@ -348,11 +182,7 @@ class RRUF_OT_reset_prefs(bpy.types.Operator):
         for prop in prefs.bl_rna.properties:
             if not prop.is_readonly:
                 prefs.property_unset(prop.identifier)
-        try:
-            _update_panel_locations(prefs, context)
-            _update_engine_constants(prefs, context)
-        except Exception as e:
-            self.report({'WARNING'}, f"Could not refresh UI after reset: {e}")
+        rruf_core.limited_redraw()
 
         try:
             _reset_popup_shortcut(context)
@@ -364,35 +194,11 @@ class RRUF_OT_reset_prefs(bpy.types.Operator):
 
 
 def register():
-    try:
-        _register_body()
-    except Exception:
-        try:
-            unregister()
-        except Exception:
-            traceback.print_exc()
-        raise
-
-
-def _register_body():
-    _patch_main_loop()
-    _patch_syntax_cache_separation()
-
     bpy.utils.register_class(RRUF_UR_Preferences)
     bpy.utils.register_class(RRUF_OT_reset_prefs)
     bpy.utils.register_class(RRUF_OT_restore_shortcut)
-
-    try:
-        prefs = bpy.context.preferences.addons[__package__].preferences
-        _configure_panel_classes(prefs)
-        _update_engine_constants(prefs, bpy.context)
-    except Exception:
-        pass
-
     rruf_core.register()
-
     bpy.utils.register_class(RRUF_PT_Setup_Main)
-
     rruf_editor.register()
 
     pcoll = bpy.utils.previews.new()
@@ -402,34 +208,12 @@ def _register_body():
     rruf_editor.preview_collections = _PREVIEW_COLLECTIONS
 
 def unregister():
-    errors = []
-
-    def cleanup(action):
-        try:
-            action()
-        except Exception as e:
-            errors.append(e)
-            traceback.print_exc()
-
-    for p in list(_PREVIEW_COLLECTIONS.values()):
-        cleanup(lambda p=p: bpy.utils.previews.remove(p))
+    for p in _PREVIEW_COLLECTIONS.values(): bpy.utils.previews.remove(p)
     _PREVIEW_COLLECTIONS.clear()
-
-    cleanup(_remove_user_popup_items)
-
-    for cls in (RRUF_OT_restore_shortcut, RRUF_OT_reset_prefs, RRUF_UR_Preferences):
-        if cls.is_registered:
-            cleanup(lambda cls=cls: bpy.utils.unregister_class(cls))
-
-    cleanup(rruf_editor.unregister)
-    if RRUF_PT_Setup_Main.is_registered:
-        cleanup(lambda: bpy.utils.unregister_class(RRUF_PT_Setup_Main))
-    cleanup(rruf_core.unregister)
-    # Stop the core before restoring its original functions: its registered
-    # timer is the patched function, and cleanup must use that same object.
-    cleanup(_restore_patches)
-    if hasattr(rruf_core.rruf_engine, "preview_syntax_cache"):
-        del rruf_core.rruf_engine.preview_syntax_cache
-    if errors:
-        raise errors[0]
-
+    _remove_user_popup_items()
+    rruf_editor.unregister()
+    bpy.utils.unregister_class(RRUF_PT_Setup_Main)
+    rruf_core.unregister()
+    bpy.utils.unregister_class(RRUF_OT_restore_shortcut)
+    bpy.utils.unregister_class(RRUF_OT_reset_prefs)
+    bpy.utils.unregister_class(RRUF_UR_Preferences)

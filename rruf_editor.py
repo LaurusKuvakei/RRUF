@@ -23,7 +23,6 @@ _TOOLTIPS = {
     "IMPORT":         "Import a JSON snapshot to rebuild the UI structure",
     "IMPORT_WARN":    "WARNING: This will wipe specific current bone collections and rebuild them from the file",
     "PRESET_WARN":    "WARNING: This will wipe all current bone collections and load the selected preset",
-    "EMBED":          "Embed the rruf_core.py engine into this blend file for portable distribution",
     "ICON_GRID":      "Select this icon for the collection",
     "COPY_PROPS":     "Copy all custom properties from this collection to the clipboard",
     "PASTE_PROPS":    "Paste copied properties to this collection (overwrites existing keys)",
@@ -36,23 +35,6 @@ _TOOLTIPS = {
 }
 
 _PROP_FLAG_ORDER = ("x", "^", "-")
-
-PANEL_CONFIGS = {
-    'RRUF':      {'space': 'VIEW_3D', 'region': 'UI', 'context': '', 'cat': 'RRUF'},
-    'Animation': {'space': 'VIEW_3D', 'region': 'UI', 'context': '', 'cat': 'Animation'},
-    'View':      {'space': 'VIEW_3D', 'region': 'UI', 'context': '', 'cat': 'View'},
-    'Tool':      {'space': 'VIEW_3D', 'region': 'UI', 'context': '', 'cat': 'Tool'},
-    'Item':      {'space': 'VIEW_3D', 'region': 'UI', 'context': '', 'cat': 'Item'},
-}
-
-TAB_ITEMS = (
-    ('RRUF', "RRUF", "Default"),
-    ('Animation', "Animation", "Standard Animation"),
-    ('View', "View", "Standard View"),
-    ('Tool', "Tool", "Standard Tool"),
-    ('Item', "Item", "Standard Item"),
-)
-
 
 def get_active_bone_collection(armature):
     if armature.collections.active:
@@ -126,7 +108,7 @@ def _sorted_prop_keys(coll):
     return sorted(keys, key=lambda k: rruf_core._prop_sort_key(rruf_core._parse_prop_key(k)))
 
 def _build_prop_key(order, flags, name):
-    prefix = (str(order) if order else "") + "".join(f for f in _PROP_FLAG_ORDER if f in flags)
+    prefix = (f"{order:02d}" if order else "") + "".join(f for f in _PROP_FLAG_ORDER if f in flags)
     return f"{{{prefix}}}{name}" if prefix else name
 
 def _is_numeric_prop(val):
@@ -181,6 +163,7 @@ def _fix_prop_paths(armature, coll_name, old_key, new_key):
     new_lit = bpy.utils.escape_identifier(new_key)
     replace = lambda path: pattern.sub(lambda m: f"{m.group(1)}{m.group(3)}{new_lit}{m.group(3)}]", path)
     drivers = curves = skipped = 0
+    tagged = []
 
     for id_block in _iter_animated_ids():
         for fc in id_block.animation_data.drivers:
@@ -200,7 +183,7 @@ def _fix_prop_paths(armature, coll_name, old_key, new_key):
             if fixed:
                 try: fc.driver.is_valid = fc.is_valid = True
                 except Exception: pass
-                drivers += 1
+                drivers += 1; tagged.append(id_block)
             if failed: skipped += 1
 
     anim = armature.animation_data
@@ -219,6 +202,9 @@ def _fix_prop_paths(armature, coll_name, old_key, new_key):
                 if pattern.search(fc.data_path):
                     try: fc.data_path = replace(fc.data_path); curves += 1
                     except Exception: skipped += 1
+    # Tag the owners so the depsgraph rebuilds the evaluated drivers; otherwise
+    # they keep the old path and stay invalid.
+    for id_block in tagged + [armature]: id_block.update_tag()
     return drivers, curves, skipped
 
 # Blender custom-property keys are replaced rather than renamed in place.
@@ -969,8 +955,8 @@ class RRUF_OT_export_snapshot(_RRUF_ArmaturePoll, bpy.types.Operator, ExportHelp
             return {'CANCELLED'}
         return {'FINISHED'}
 
-class RRUF_OT_import_gatekeeper(_RRUF_ArmaturePoll, bpy.types.Operator):
-    bl_idname = "rruf.import_gatekeeper"
+class RRUF_OT_import_snapshot_confirm(_RRUF_ArmaturePoll, bpy.types.Operator):
+    bl_idname = "rruf.import_snapshot_confirm"
     bl_label = "Confirm Import?"
     bl_description = _TOOLTIPS["IMPORT_WARN"]
 
@@ -1034,60 +1020,6 @@ class RRUF_OT_import_snapshot(_RRUF_ArmaturePoll, bpy.types.Operator, ImportHelp
         rruf_core.limited_redraw()
         if result:
             self.report({'WARNING'}, f"Imported. {result} propert{'y' if result == 1 else 'ies'} could not be restored (see console).")
-        return {'FINISHED'}
-
-def _local_core_text():
-    # Only a local text can be replaced; a linked one belongs to its library.
-    return next((t for t in bpy.data.texts if t.name == "rruf_core.py" and t.library is None), None)
-
-class RRUF_OT_embed_core(bpy.types.Operator):
-    bl_idname = "rruf.embed_core"
-    bl_label = "Embed Core"
-    bl_description = "Embed the rruf_core.py engine into this blend file"
-    bl_options = {'UNDO'}
-
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self, width=380)
-
-    def draw(self, context):
-        layout = self.layout
-        col = layout.column(align=True)
-        col.alert = True
-        col.label(text="Embedding Core Engine", icon='INFO')
-        col.alert = False
-        col.separator()
-        col.label(text="This will package 'rruf_core.py' into the current .blend file")
-        col.label(text="and register it to run automatically on file load.")
-        old = _local_core_text()
-        if old:
-            col.separator()
-            col.alert = True
-            if "RRUF_GLOBAL_LOCK" in old.as_string():
-                col.label(text="The existing 'rruf_core.py' text will be replaced.", icon='ERROR')
-            else:
-                col.label(text="A text named 'rruf_core.py' exists and is not an RRUF core.", icon='ERROR')
-                col.label(text="It will be replaced. Rename it first to keep it.")
-            col.alert = False
-        col.separator()
-        col.label(text="Are you sure you want to proceed?", icon='QUESTION')
-
-    def execute(self, context):
-        try:
-            raw_code = (_pkg_files(__package__) / "rruf_core.py").read_text(encoding='utf-8')
-
-            name_core = "rruf_core.py"
-            old = _local_core_text()
-            if old: bpy.data.texts.remove(old)
-
-            txt_core = bpy.data.texts.new(name_core)
-            txt_core.write(raw_code.rstrip() + "\n\n_rruf_embedded_boot()\n")
-            txt_core.use_module = True
-
-        except Exception as e:
-            self.report({'ERROR'}, f"Failed to embed rruf_core.py: {e}")
-            return {'CANCELLED'}
-
-        self.report({'INFO'}, "RRUF Core embedded successfully.")
         return {'FINISHED'}
 
 # Keep references to dynamic enum strings after the callback returns.
@@ -1347,13 +1279,24 @@ class RRUF_PT_Setup(bpy.types.Panel):
         else:
             sub.prop(props, "use_rebuild", text="Rebuild", icon='TRASH', toggle=True)
 
-        b_imp.operator("rruf.import_gatekeeper", text="Import Snapshot", icon='FILE_FOLDER')
+        b_imp.operator("rruf.import_snapshot_confirm", text="Import Snapshot", icon='FILE_FOLDER')
 
-        layout.separator()
 
-        b_embed = layout.box()
-        b_embed.label(text="Engine Injection", icon='FILE_SCRIPT')
-        b_embed.operator("rruf.embed_core", text="Embed Core into .Blend", icon='TEXT')
+# Load the active bone collection into the Collection Editor when it changes.
+# Called by the core's main loop; only acts while the editor is shown.
+def sync_active_collection(context):
+    prefs = context.preferences.addons[__package__].preferences
+    if not prefs.pref_show_setup_panel:
+        return False
+    obj = context.active_object
+    if not (obj and obj.type == 'ARMATURE' and obj.data and obj.data.get(rruf_core.RRUF_TRIGGER_KEY)):
+        return False
+    coll = get_active_bone_collection(obj.data)
+    props = context.scene.rruf_editor
+    if coll and props.last_target_name != coll.name:
+        sync_ui_props_to_collection(props, coll)
+        return True
+    return False
 
 
 classes = (
@@ -1361,8 +1304,8 @@ classes = (
     RRUF_OT_select_icon_grid, RRUF_OT_sync_editor, RRUF_OT_reorder_tag,
     RRUF_OT_editor_action, RRUF_OT_commit_param, RRUF_OT_enable,
     RRUF_OT_copy_props, RRUF_OT_paste_props, RRUF_OT_clear_clipboard,
-    RRUF_OT_export_snapshot, RRUF_OT_import_gatekeeper, RRUF_OT_import_snapshot,
-    RRUF_OT_embed_core, RRUF_OT_load_internal_preset, RRUF_PT_Setup,
+    RRUF_OT_export_snapshot, RRUF_OT_import_snapshot_confirm, RRUF_OT_import_snapshot,
+    RRUF_OT_load_internal_preset, RRUF_PT_Setup,
     RRUF_OT_convert_syntax, RRUF_OT_prop_select, RRUF_OT_prop_apply, RRUF_OT_prop_move
 )
 
