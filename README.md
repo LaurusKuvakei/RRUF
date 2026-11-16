@@ -20,7 +20,6 @@ Use the main panel to work with a configured rig. Use the Collection Editor to b
 - [Setting up snapping](#setting-up-snapping)
 - [Collection Editor](#collection-editor)
 - [Presets and snapshots](#presets-and-snapshots)
-- [Preferences](#preferences)
 - [Troubleshooting](#troubleshooting)
 
 ## Installation and panel locations
@@ -31,10 +30,10 @@ By default, RRUF has two locations in the 3D Viewport sidebar. Press **N** to op
 
 | Location | Purpose | When it appears |
 | --- | --- | --- |
-| **Tool → Reactive Rig UI** | Visibility, properties, snapping, and workflow tools | In Pose Mode, with an RRUF-enabled armature selected |
-| **RRUF → Reactive Rig UI Framework → Collection Editor** | Building and editing the interface | With an RRUF-enabled armature selected and **Show Editor** enabled in RRUF's preferences (otherwise the panel offers **Enable RRUF for this armature**) |
+| **RRUF → Reactive Rig UI Framework** | Building, editing, and embedding the rig UI | With an armature selected (offers **Enable RRUF for this armature** until enabled) |
+| **Tool → Reactive Rig UI** | Visibility, properties, snapping, and workflow tools | In Pose Mode, with an RRUF-enabled armature selected while the embedded `rruf_core.py` is running |
 
-To show the editor, find RRUF in **Preferences → Add-ons**, expand its settings, and enable **Show Editor**. It is off by default so an animator can use the rig without seeing the setup tools.
+The extension provides the **Collection Editor** and embeds `rruf_core.py` directly into your `.blend` file. The runtime UI runs **only from the embedded `rruf_core.py`**, so animators can open and use the rig without installing the extension (requires **Auto Run Python Scripts** in Blender's Preferences → Save & Load, or running the `rruf_core.py` text block manually).
 
 The main panel also appears in the Properties editor's **Tool** tab.
 
@@ -43,8 +42,8 @@ The main panel also appears in the Properties editor's **Tool** tab.
 ### Start with the generic preset
 
 1. Select the armature you want to configure.
-2. Enable **Show Editor** in RRUF's preferences.
-3. Open the **RRUF** sidebar tab and click **Enable RRUF for this armature**.
+2. Open the **RRUF** sidebar tab and click **Enable RRUF for this armature**.
+3. Click **Embed Core** at the bottom of the Collection Editor to package `rruf_core.py` into the `.blend` file, then click **Run Embedded Core** to start the runtime UI in the current session.
 4. In the Collection Editor, find **Internal Presets** and select `rruf_generic.json`.
 5. Review **Import Options**. For an existing rig, leave **Rebuild** off unless you intend to replace its collection structure.
 6. Click the import button beside the preset selector and confirm the load.
@@ -107,7 +106,7 @@ Avoid relying on Blender's automatic `.001` suffix for UI collections; RRUF trea
 
 The main panel is the animator-facing interface. The category buttons appear according to the roots present in the rig. Hover over an icon to read its tooltip. The **Info** button in the header provides a compact control reference.
 
-In Pose Mode, **Ctrl+Shift+R** opens the RRUF Quick Menu, which presents the same rig interface in a popup. You can change or disable this shortcut in the extension preferences (see [Preferences](#preferences)). Keyframes cannot be inserted from the Quick Menu popup (a Blender limitation); use the sidebar panel to key properties.
+In Pose Mode, **Ctrl+Shift+R** opens the RRUF Quick Menu, which presents the same rig interface in a popup. You can change or disable this shortcut in Blender's **Preferences → Keymap**. Keyframes cannot be inserted from the Quick Menu popup (a Blender limitation); use the sidebar panel to key properties.
 
 ### Workflow
 
@@ -253,7 +252,7 @@ One bone per source and target collection is the simplest setup. When the target
 
 ## Collection Editor
 
-Select the armature and enable **Show Editor**. In Blender's **Armature Data Properties → Bone Collections**, make the collection you want to edit active. RRUF's editor follows that active collection.
+Select the armature and open the **RRUF** tab in the 3D Viewport sidebar. In Blender's **Armature Data Properties → Bone Collections**, make the collection you want to edit active. RRUF's editor follows that active collection.
 
 Create collections, set their parents, arrange their order, and assign bones using Blender's Bone Collections tools. The RRUF editor then helps you compose their UI names and edit property prefixes.
 
@@ -319,36 +318,24 @@ With **Rebuild on**, RRUF removes collections in the selected categories before 
 
 RRUF checks the snapshot before rebuilding. If values cannot be restored, it reports the skipped properties. Scene-collection references also need a matching collection name in the destination file; unresolved references are skipped.
 
-## Preferences
-
-| Setting | Use |
-| --- | --- |
-| **Show Editor** | Shows the setup panel. Off by default. |
-| **Polling Rate** | How often (in Hz) RRUF checks the active rig for changes. Default 4, range 2–8; this is separate from the scene's animation frame rate. Called **FPS** before 2.1.2; updating resets it to 4. |
-| **Depth** | Maximum collection nesting processed for the UI. Default 8. Simplify deep layouts or increase this setting if needed. |
-| **Shortcut** | Change the Quick Menu key or turn it off. If the shortcut was removed (for example in Blender's Keymap preferences), use **Restore Shortcut**. |
-| **Reset to Defaults** | Restores RRUF's extension preferences, including the Quick Menu shortcut. |
-
-Disabling or uninstalling RRUF removes its shortcut; nothing is left in your keymap preferences.
-
 ## Troubleshooting
 
 | What you see | What to check |
 | --- | --- |
-| No main panel | Select an RRUF-enabled armature, enter Pose Mode, and open the sidebar's **Tool** tab. |
-| No editor | Enable Show Editor in the extension preferences and select an armature. |
+| No main panel | Make sure `rruf_core.py` is embedded and running (click **Embed Core** and **Run Embedded Core** in the Collection Editor, or enable **Auto Run Python Scripts** when opening the file), select an RRUF-enabled armature, enter Pose Mode, and open the sidebar's **Tool** tab. |
+| No editor | Make sure an armature is selected and open the **RRUF** tab in the 3D Viewport sidebar. |
 | **ACCESS DENIED** | Add a top-level `(IN)` or `(INTERNALS)` collection. It may be empty. |
 | **NO UI CONFIGURED** | Add `(DI)`, `(SE)`, or `(SN)` at the top level, with UI collections beneath it. |
 | A category is empty | Add child collections under its root. Properties need custom properties on the collections; snapping needs source/target pairs. |
 | **SYNTAX ERROR** | Check braces, tag spelling, tag/category compatibility, icon names, and unintended `.001` suffixes. |
 | A collection disappears | Check `(s)`, `(h)`, `(h)[ALW]`, its parent, and whether a search filter is active. |
-| **Max Depth Exceeded** | Reduce collection nesting or increase Depth in the extension preferences. |
+| **Max Depth Exceeded** | Reduce collection nesting to 8 levels or fewer. |
 | Property symmetry misses a control | Ensure both partners are adjacent in the displayed layout and have the same full property key, including prefixes. |
 | Snapping moves the wrong bone | Check sibling order, `(t)` placement, assignments, and alphabetical pairing when there are multiple bones. |
 | A preset or snapshot does not assign bones | The destination armature must already contain bones with matching names. |
-| A file has a `rruf_core.py` text block | It was embedded by RRUF 2.1.x. Since 2.2.0 the extension provides the UI and the old embedded core stays idle while it is enabled. You can delete the text block and save the file. |
+| A file has a `rruf_core.py` text block | RRUF's runtime runs from the embedded `rruf_core.py` text block so the rig UI works without installing the extension. Keep **Register** (`use_module`) enabled on it, or click **Update Embedded Core** in the editor to refresh it. |
 
-If the interface stops updating after repeated runtime errors, reload the file or disable and re-enable RRUF, and check Blender's console. When reporting a problem, include your Blender and RRUF versions, the steps to reproduce it, and any error text. A small example file is useful when you can share one.
+If the main panel disappears after repeated runtime errors, the embedded core has stopped itself: check Blender's console, then click **Run Embedded Core** in the Collection Editor or reload the file. When reporting a problem, include your Blender and RRUF versions, the steps to reproduce it, and any error text. A small example file is useful when you can share one.
 
 For Blender's own collection tools, see the [Bone Collections documentation](https://docs.blender.org/manual/en/latest/animation/armatures/properties/bone_collections.html), including assignment and custom properties.
 
@@ -356,4 +343,6 @@ For Blender's own collection tools, see the [Bone Collections documentation](htt
 
 RRUF's Python code and project files are licensed under **GNU GPL version 3 or later**. The included `icon.png` is **CC0**. See `LICENSE.md` and `LICENSE_ASSETS.md`.
 
-RRUF has been under development since October 2025 and has been used in several public projects during that time. It was developed with help from LLMs.
+RRUF has been under development since October 2025 and has been used in several public projects during that time.
+
+Note: Development assisted by LLMs.

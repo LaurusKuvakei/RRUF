@@ -20,17 +20,16 @@ import re
 import traceback
 import mathutils
 import functools
-from bpy.app.handlers import persistent
 from collections import namedtuple, OrderedDict
 
 RRUFNodeData = namedtuple('RRUFNodeData', ['node', 'coll', 'label', 'is_valid', 'has_children', 'has_overflow'])
 
 
 RRUF_TRIGGER_KEY = "RRUF_KEY"
-_DEFAULT_MAX_NESTING = 8
+RRUF_GLOBAL_LOCK = "RRUF_GLOBAL_LOCK"
+_MAX_NESTING = 8
 _MAX_SYNTAX_CACHE_SIZE = 2000
-_MAX_PREVIEW_CACHE_SIZE = 500
-_DEFAULT_POLLING_RATE = 4.0
+_POLLING_RATE = 4.0
 POPUP_WIDTH = 450
 POPUP_KEYBIND = {"type": 'R', "value": 'PRESS', "ctrl": True, "shift": True, "alt": False}
 
@@ -107,11 +106,9 @@ _TIPS = {
     "VIS":              ("Vis", "Toggles viewport visibility for the collection."),
     "SOLO":             ("Solo", "Isolates the collection in the viewport."),
     "SYM":              ("Symmetrize", "Copies custom properties to the linked partner."),
-    "SYM_ALL":          ("Symmetrize All", "Symmetrizes all linked property pairs in the rig."),
     "SYM_FOLDER":       ("Symmetrize Folder", "Symmetrizes linked property pairs within the folder and sub-folders."),
     "RESET":            ("Reset", "Resets custom properties to default values."),
     "PROP_TOGGLE":      ("Toggle", "Switches the property between 0 and 1."),
-    "DUMMY":            ("", "Indicates active global symmetrization."),
     "EXPAND_ALL":       ("Expand/Collapse", "Expands or collapses all collections in the panel."),
     "RST_SEL_LOC":      ("Loc", "Resets location for selected bones."),
     "RST_SEL_ROT":      ("Rot", "Resets rotation for selected bones."),
@@ -121,10 +118,12 @@ _TIPS = {
     "RST_RIG_ROT":      ("Rot", "Resets rotation for all visible bones in the rig."),
     "RST_RIG_SCALE":    ("Scl", "Resets scale for all visible bones in the rig."),
     "RST_RIG_ALL":      ("All", "Resets all transforms for all visible bones in the rig."),
-    "SNAP_CURS_TO_SEL": ("Cur->Sel", "Snaps the 3D cursor to the active bone."),
     "SNAP_CURS_TO_SEL_LOC": ("Loc", "Snaps the 3D cursor location to the active bone."),
     "SNAP_CURS_TO_SEL_ROT": ("Rot", "Snaps the 3D cursor rotation to the active bone."),
     "SNAP_CURS_TO_SEL_ALL": ("All", "Snaps the 3D cursor location and rotation to the active bone."),
+    "SNAP_SEL_TO_CURS_LOC": ("Loc", "Snaps the active bone location to the 3D cursor."),
+    "SNAP_SEL_TO_CURS_ROT": ("Rot", "Snaps the active bone rotation to the 3D cursor."),
+    "SNAP_SEL_TO_CURS_ALL": ("All", "Snaps the active bone location and rotation to the 3D cursor."),
     "ZERO_AXIS":        ("Zero Axis", "Resets the specified cursor axis to 0.0."),
     "VIS_SEARCH":       ("Search Bone", "Filters visibility groups by bone name."),
     "VIS_SELECT":       ("Select Bone", "Selects the search result and sets it as the active bone."),
@@ -173,7 +172,6 @@ RRUF_MANUAL_DATA = [
         ("FILTER: Search properties or collection labels.", 'VIEWZOOM', [
             ("Clear active search", 'X')
         ]),
-        ("SYMMETRIZE ALL: Batch-copy linked .L and .R pairs.", 'MOD_MIRROR', []),
         ("COLLECTION CONTROLS: Localized operations:", 'SETTINGS', [
             ("Symmetrize Specific Partner", 'TRIA_RIGHT'),
             ("Reset Folder to Defaults", 'LOOP_BACK')
@@ -198,19 +196,19 @@ RRUF_MANUAL_DATA = [
 ]
 
 
-# Engine settings are read from the add-on preferences where they are used.
-# Defaults apply while the preferences are unavailable (during registration).
-def _prefs():
-    try: return bpy.context.preferences.addons[__package__].preferences
-    except (AttributeError, KeyError): return None
-
-def _max_nesting():
-    p = _prefs()
-    return p.pref_max_nesting if p else _DEFAULT_MAX_NESTING
-
-def _polling_rate():
-    p = _prefs()
-    return p.pref_polling_rate if p else _DEFAULT_POLLING_RATE
+def _prop_ui_sig(coll, key):
+    try:
+        d = coll.id_properties_ui(key).as_dict()
+    except Exception:
+        return None
+    def _norm(v):
+        if v is None or isinstance(v, (int, float, str, bool, bytes)):
+            return v
+        try:
+            return tuple(_norm(x) for x in v)
+        except TypeError:
+            return v
+    return tuple(_norm(d.get(f)) for f in ("min", "max", "default", "subtype"))
 
 
 class RRUF_Core_Engine:
@@ -223,16 +221,13 @@ class RRUF_Core_Engine:
         self.err_count = 0
         self.k_cache = {}
         self.syntax_cache = OrderedDict()
-        # Editor previews may parse names that are never committed to the rig.
-        # They use a separate bounded cache so they do not evict engine entries.
-        self.preview_syntax_cache = OrderedDict()
 
     def get_ui_data(self, session_uid):
         if session_uid in self.data:
             return self.data[session_uid]
         return {
             "node_map": {}, "vis_display": [], "snap_groups": {}, "snap_layout": [],
-            "props_others": [], "has_links": False, "found_settings": False,
+            "props_others": [], "found_settings": False,
             "root_collection_names": [], "mch_cwi": True
         }
 
@@ -266,7 +261,6 @@ class RRUF_Core_Engine:
         self.gatekeeper.clear()
         self.search.clear()
         self.syntax_cache.clear()
-        self.preview_syntax_cache.clear()
         self.k_cache.clear()
 
     def scan_hierarchy(self, armature, old_packet=None):
@@ -278,7 +272,6 @@ class RRUF_Core_Engine:
         traversal_order = []
         stack = []
         mch_cwi = False
-        max_nesting = _max_nesting()
 
         for c in reversed(armature.collections):
             if c.parent is None:
@@ -308,12 +301,13 @@ class RRUF_Core_Engine:
                 parsed_props[k] = parsed
 
             prop_keys = tuple(sorted(parsed_props, key=lambda k: _prop_sort_key(parsed_props[k])))
+            prop_ui_sigs = tuple(_prop_ui_sig(b_coll, k) for k in prop_keys)
             bone_names = tuple(b_coll.bones.keys())
             linked_colls = [(val.name, '-' in _parse_prop_key(key)[1]) for key, val in b_coll.items() if isinstance(val, bpy.types.Collection)]
 
             state_hash = hash((
                 b_coll.is_visible, b_coll.is_solo, parent_id, depth, tree_ctx,
-                prop_keys, bone_names, child_names, tuple(linked_colls)
+                prop_keys, prop_ui_sigs, bone_names, child_names, tuple(linked_colls)
             ))
             new_hashes[raw_name] = state_hash
             is_clean = (raw_name in old_hashes and old_hashes[raw_name] == state_hash and raw_name in old_node_map)
@@ -353,7 +347,7 @@ class RRUF_Core_Engine:
 
             if any(tag in raw_name for tag in _SKIP_TAGS): continue
 
-            if depth < max_nesting:
+            if depth < _MAX_NESTING:
                 for child in rev_children:
                     stack.append((child, raw_name, depth + 1, node["tree_type"]))
             elif len(rev_children) > 0:
@@ -372,19 +366,8 @@ class RRUF_Core_Engine:
             "mch_cwi": mch_cwi
         }
 
-    def parse_collection_syntax(self, raw_name, tree_ctx=None, depth=0, is_editor_preview=False):
+    def parse_collection_syntax(self, raw_name, tree_ctx=None, depth=0):
         cache_key = (raw_name, tree_ctx, depth)
-        if is_editor_preview and cache_key not in self.syntax_cache:
-            preview_cache = self.preview_syntax_cache
-            if cache_key in preview_cache:
-                preview_cache.move_to_end(cache_key)
-                return preview_cache[cache_key]
-            result = self.parse_collection_syntax(raw_name, tree_ctx, depth)
-            self.syntax_cache.pop(cache_key, None)
-            preview_cache[cache_key] = result
-            if len(preview_cache) > _MAX_PREVIEW_CACHE_SIZE:
-                preview_cache.popitem(last=False)
-            return result
         if cache_key in self.syntax_cache:
             self.syntax_cache.move_to_end(cache_key)
             return self.syntax_cache[cache_key]
@@ -431,10 +414,8 @@ class RRUF_Core_Engine:
                 msg = f"SYNTAX ERROR: {f} takes no parameters"
 
             elif c is not None and p:
-                is_dyn = (c == _DYNAMIC_PARAM) or (isinstance(c, set) and _DYNAMIC_PARAM in c)
-                if not is_dyn:
-                    if (isinstance(c, set) and p not in c) or (isinstance(c, str) and p != c):
-                        msg = f"SYNTAX ERROR: '{p}' is not valid for {f}"
+                if c != _DYNAMIC_PARAM and p != c:
+                    msg = f"SYNTAX ERROR: '{p}' is not valid for {f}"
 
             if not msg and rules.get("validator"):
                 if not p: msg = f"SYNTAX ERROR: {f} missing parameter"
@@ -485,7 +466,7 @@ class RRUF_Core_Engine:
     # layout preparation happen here when the tracked state changes.
     def tick(self, context):
         self.tick_count += 1
-        rate = _polling_rate()
+        rate = _POLLING_RATE
 
         # Periodically discard cached data for armatures that no longer exist.
         # Parser entries use names rather than armature IDs and have a separate
@@ -510,12 +491,13 @@ class RRUF_Core_Engine:
         fast_st = tuple((c.name, c.is_visible, c.is_solo, c.parent) for c in arm.collections_all)
 
         # Refresh property keys, linked collection names, and bone assignments
-        # about once per second at any Polling Rate.
+        # about once per second while an RRUF rig is active.
         # Property values are read directly by Blender's UI controls, so moving
         # a slider does not require rebuilding the interface.
         if self.tick_count % max(1, int(rate)) == 0 or arm_key not in self.k_cache:
             self.k_cache[arm_key] = tuple(
-                (tuple((k, v.name) if isinstance(v, bpy.types.Collection) else k for k, v in c.items()),
+                (tuple((k, v.name) if isinstance(v, bpy.types.Collection) else (k, _prop_ui_sig(c, k))
+                       for k, v in c.items()),
                  tuple(c.bones.keys()))
                 for c in arm.collections_all)
 
@@ -832,7 +814,7 @@ def _run_ui_data_preparation(scan_result):
     roots = scan_result.get("root_collection_names", [])
     data = {
         "vis_display": [], "snap_groups": {}, "snap_layout": [],
-        "props_others": [], "has_links": False, "found_settings": False
+        "props_others": [], "found_settings": False
     }
 
     def is_ui_visible(node_id):
@@ -894,9 +876,6 @@ def _run_ui_data_preparation(scan_result):
         for c in valid_children: prepare_recursive(c)
 
     for r in raw_vis + raw_props + valid_raw_snaps: prepare_recursive(r)
-
-    for node in nm.values():
-        if node.get("link_meta"): data["has_links"] = True; break
 
     scan_result.update(data)
     return scan_result
@@ -987,26 +966,15 @@ def _guard_enforcer(arm, old_packet, current_packet):
 
 _IDLE_INTERVAL = 0.5
 
-# Editor errors are reported but do not count toward stopping the timer.
-def _sync_editor(ctx):
-    if not ctx: return False
-    try:
-        from . import rruf_editor
-        return rruf_editor.sync_active_collection(ctx)
-    except Exception:
-        traceback.print_exc()
-        return False
-
-# Keep one polling timer for this core instance. The configured rate is
+# Keep one polling timer for this core instance. Its fixed rate is
 # independent of the scene frame rate. Returning None stops this timer.
 def rruf_main_loop_timer():
+    ctx = getattr(bpy, "context", None)
     try:
-        ctx = getattr(bpy, "context", None)
         redraw = rruf_engine.tick(ctx)
-        if _sync_editor(ctx): redraw = True
         if redraw:
             limited_redraw()
-        interval = 1.0 / _polling_rate()
+        interval = 1.0 / _POLLING_RATE
         # Poll less often while no RRUF armature is active. tick() already
         # returns early in that case; this only reduces idle wake-ups.
         obj = getattr(ctx, "active_object", None) if ctx else None
@@ -1018,21 +986,24 @@ def rruf_main_loop_timer():
         rruf_engine.err_count += 1
         # Stop after repeated failures to avoid an endless stream of tracebacks.
         # A completed active-armature update resets the error counter.
-        # Loading a file restarts the timer.
         if rruf_engine.err_count > 5:
-            print("RRUF: Too many consecutive errors. Stopping the update timer.")
+            print("RRUF: Too many consecutive errors. Stopping the embedded core.")
             rruf_engine.purge_all()
+            # Unregister everything so the lock is released and the core can be
+            # run again. Returning None removes this timer, so it is not
+            # unregistered from inside itself.
+            try: unregister(from_timer=True)
+            except Exception: traceback.print_exc()
             return None
-        return 1.0 / _polling_rate()
+        return 1.0 / _POLLING_RATE
 
-# Cached rig data belongs to the previous file. The timer is persistent and
-# survives file loads; this only restarts it if it stopped after errors.
-@persistent
-def _rruf_on_load_post(_dummy):
-    rruf_engine.purge_all()
-    rruf_engine.err_count = 0
-    if not bpy.app.timers.is_registered(rruf_main_loop_timer):
-        bpy.app.timers.register(rruf_main_loop_timer, first_interval=0.25, persistent=True)
+# The embedded core belongs to the current .blend; unregister before loading another file.
+# Do not remove this handler from inside itself: Blender is iterating load_pre,
+# and shrinking the list there skips the next handler. It is not persistent, so
+# Blender drops it once the new file is loaded.
+def _rruf_on_load_pre(_dummy):
+    try: unregister(from_load_pre=True)
+    except Exception: pass
 
 class RRUF_OperatorMixin:
     _metadata_key = ""
@@ -1884,7 +1855,7 @@ def _draw_children_grid(container_layout, node, armature, ui_data, draw_func, **
     if node.get("overflow", False): _draw_overflow_error(container_layout)
 
 def _draw_vis_recursive(layout, armature, node_id, ui_data, depth=0):
-    if depth > _max_nesting(): return
+    if depth > _MAX_NESTING: return
     node = ui_data.get("node_map", {}).get(node_id)
     if not node: return
 
@@ -2135,6 +2106,10 @@ def _remove_popup_keymap():
             km.keymap_items.remove(k)
 
 def register():
+    bpy.app.driver_namespace[RRUF_GLOBAL_LOCK] = unregister
+    rruf_engine.purge_all()
+    rruf_engine.err_count = 0
+
     bpy.types.WindowManager.rruf_active_tab = bpy.props.EnumProperty(
         name="Menu Tab",
         items=[
@@ -2156,19 +2131,24 @@ def register():
     wm = bpy.context.window_manager
     kc = getattr(wm, "keyconfigs", None)
     if kc and kc.addon:
+        _remove_popup_keymap()
         km = kc.addon.keymaps.get('Pose')
         if not km: km = kc.addon.keymaps.new(name='Pose', space_type='EMPTY')
         km.keymap_items.new(RRUF_OT_popup_ui.bl_idname, **POPUP_KEYBIND)
 
-    bpy.app.timers.register(rruf_main_loop_timer, first_interval=0.25, persistent=True)
-    bpy.app.handlers.load_post.append(_rruf_on_load_post)
+    if not bpy.app.timers.is_registered(rruf_main_loop_timer):
+        bpy.app.timers.register(rruf_main_loop_timer, first_interval=0.25, persistent=True)
+    if _rruf_on_load_pre not in bpy.app.handlers.load_pre:
+        bpy.app.handlers.load_pre.append(_rruf_on_load_pre)
 
-def unregister():
-    if _rruf_on_load_post in bpy.app.handlers.load_post:
-        bpy.app.handlers.load_post.remove(_rruf_on_load_post)
+def unregister(from_load_pre=False, from_timer=False):
+    if not from_load_pre and _rruf_on_load_pre in bpy.app.handlers.load_pre:
+        bpy.app.handlers.load_pre.remove(_rruf_on_load_pre)
     _remove_popup_keymap()
 
-    if bpy.app.timers.is_registered(rruf_main_loop_timer):
+    bpy.app.driver_namespace.pop(RRUF_GLOBAL_LOCK, None)
+
+    if not from_timer and bpy.app.timers.is_registered(rruf_main_loop_timer):
         bpy.app.timers.unregister(rruf_main_loop_timer)
 
     for c in reversed(_CLASSES):
@@ -2178,6 +2158,17 @@ def unregister():
     if hasattr(bpy.types.Armature, "rruf"): del bpy.types.Armature.rruf
     if hasattr(bpy.types.WindowManager, "rruf_active_tab"): del bpy.types.WindowManager.rruf_active_tab
     if hasattr(bpy.types.WindowManager, "rruf_show_workflow"): del bpy.types.WindowManager.rruf_show_workflow
+
+def _rruf_embedded_boot():
+    # Prevent registering a second instance if an embedded core is already active.
+    if RRUF_GLOBAL_LOCK in bpy.app.driver_namespace:
+        return
+    try:
+        register()
+    except Exception as e:
+        try: unregister()
+        except Exception: pass
+        print(f"RRUF Core: Embedded registration failed ({e}). Nothing was left registered.")
 
 
 #                   ####                 
